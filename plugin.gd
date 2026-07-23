@@ -16,7 +16,7 @@ var skeleton_merge_tool_plugin : EditorPlugin
 
 
 func recursive_print(node: Node, indent: String = ""):
-	var fnstr = "" if str(node.filename) == "" else (" (" + str(node.filename) + ")")
+	var fnstr = "" if node.scene_file_path.is_empty() else (" (" + node.scene_file_path + ")")
 	print(indent + str(node.name) + ": owner=" + str(node.owner.name if node.owner != null else "") + fnstr)
 	#print(indent + str(node.name) + str(node) + ": owner=" + str(node.owner.name if node.owner != null else "") + str(node.owner) + fnstr)
 	var new_indent: String = indent + "  "

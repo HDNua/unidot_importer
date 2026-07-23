@@ -47,7 +47,9 @@ const ENABLE_CONSOLE_DEBUGGING : bool = false
 
 # SEMI-STATIC
 func get_singleton() -> Object:
-	var asset_database = load(ASSET_DATABASE_PATH)
+	var asset_database = null
+	if ResourceLoader.exists(ASSET_DATABASE_PATH):
+		asset_database = load(ASSET_DATABASE_PATH)
 	if asset_database == null:
 		asset_database = self
 		asset_database.preload_builtin_assets()

@@ -217,7 +217,7 @@ func pack_scene(pkgasset, is_prefab) -> PackedScene:
 				scene_contents.remove_child(navregion)
 				navregion = null
 			else:
-				navregion.navmesh = NavigationMesh.new()
+				navregion.navigation_mesh = NavigationMesh.new()
 		elif asset.type == "OcclusionCullingSettings":
 			var ocd: Array = asset.keys.get("m_OcclusionCullingData", [null, 0, null, null])
 			if ocd[1] == 0:
@@ -276,7 +276,7 @@ func pack_scene(pkgasset, is_prefab) -> PackedScene:
 			if len(skelleys_with_no_parent) >= 1:
 				# If a toplevel node is part of a skeleton, insert the skeleton between the actual root and the toplevel node.
 				scene_contents.add_child(skel.godot_skeleton, true)
-				skel.owner = scene_contents
+				skel.godot_skeleton.owner = scene_contents
 			asset.create_skeleton_bone(node_state, skel)
 		else:
 			# asset.log_debug(str(asset) + " position " + str(asset.transform.godot_transform))

@@ -866,7 +866,7 @@ class UnidotMaterial:
 			if emis_mag > 0.01:
 				ret.emission_enabled = true
 				ret.emission = Color(emis_vec.x / emis_mag, emis_vec.y / emis_mag, emis_vec.z / emis_mag).linear_to_srgb()
-				ret.emission_energy = emis_mag
+				ret.emission_energy_multiplier = emis_mag
 				ret.emission_texture = get_texture(texProperties, "_EmissionMap")
 				if ret.emission_texture != null:
 					ret.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
@@ -5370,10 +5370,22 @@ class UnidotRigidbody:
 		return outdict
 
 	func create_physical_bone(state: RefCounted, godot_skeleton: Skeleton3D, name: String):
+		var physical_bone_parent: Node3D = godot_skeleton
+		if ClassDB.class_exists("PhysicalBoneSimulator3D"):
+			var simulator: Node3D = null
+			for child in godot_skeleton.get_children():
+				if child.is_class("PhysicalBoneSimulator3D"):
+					simulator = child as Node3D
+					break
+			if simulator == null:
+				simulator = ClassDB.instantiate("PhysicalBoneSimulator3D") as Node3D
+				simulator.name = "PhysicalBoneSimulator3D"
+				state.add_child(simulator, godot_skeleton, null)
+			physical_bone_parent = simulator
 		var new_node: PhysicalBone3D = PhysicalBone3D.new()
-		new_node.bone_name = name
 		new_node.name = name
-		state.add_child(new_node, godot_skeleton, self)
+		state.add_child(new_node, physical_bone_parent, self)
+		new_node.set("bone_name", name)
 		return new_node
 
 
@@ -6005,10 +6017,6 @@ class UnidotAudioSource:
 
 	func convert_properties(node: Node, uprops: Dictionary) -> Dictionary:
 		var outdict = self.convert_properties_component(node, uprops)
-		if uprops.has("m_CullingMask"):
-			outdict["light_cull_mask"] = uprops.get("m_CullingMask").get("m_Bits")
-		elif uprops.has("m_CullingMask.m_Bits"):
-			outdict["light_cull_mask"] = uprops.get("m_CullingMask.m_Bits")
 		if uprops.has("m_Pitch"):
 			outdict["pitch_scale"] = uprops.get("m_Pitch")
 		if uprops.has("m_Volume"):
@@ -6017,8 +6025,8 @@ class UnidotAudioSource:
 			if volume_linear > 0.0001:
 				volume_db = 20.0 * log(volume_linear) / log(10.0)
 			outdict["volume_db"] = volume_db
-			outdict["unit_db"] = volume_db
-			outdict["max_db"] = volume_db
+			if node is AudioStreamPlayer3D:
+				outdict["max_db"] = volume_db
 		if uprops.has("m_PlayOnAwake"):
 			outdict["autoplay"] = uprops.get("m_PlayOnAwake") == 1
 		if uprops.has("Mute"):
@@ -6026,27 +6034,28 @@ class UnidotAudioSource:
 		# "Loop" not supported?
 		if uprops.has("m_audioClip"):
 			outdict["stream"] = meta.get_godot_resource(get_ref(uprops, "m_audioClip"))
-		if uprops.has("MaxDistance"):
-			outdict["max_distance"] = uprops.get("MaxDistance")
-		# TODO: how does MinDistance work with falloff curves? Are max_db and unit_db affected?
-		if uprops.get("rolloffMode", -1) == 0:
-			outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
-		if uprops.get("rolloffMode", -1) == 1:
-			outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-		if uprops.get("rolloffMode", -1) == 2:
-			# Guess which slope curve it is closest to.
-			var slope_estimate: float = 0.0
-			var curve_points: Array = uprops.get("rolloffCustomCurve", {}).get("m_Curve", [{}])
-			for curvept in curve_points:
-				slope_estimate += curvept.get("outSlope", 0.0)
-			slope_estimate /= len(curve_points)
-			if slope_estimate < -5.0:
+		if node is AudioStreamPlayer3D:
+			if uprops.has("MaxDistance"):
+				outdict["max_distance"] = uprops.get("MaxDistance")
+			# TODO: how does MinDistance work with falloff curves? Are max_db and unit_size affected?
+			if uprops.get("rolloffMode", -1) == 0:
 				outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
-			elif slope_estimate < -0.1:
+			if uprops.get("rolloffMode", -1) == 1:
 				outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-			else:
-				outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_DISABLED
-			# TODO: How does unit_size work?
+			if uprops.get("rolloffMode", -1) == 2:
+				# Guess which slope curve it is closest to.
+				var slope_estimate: float = 0.0
+				var curve_points: Array = uprops.get("rolloffCustomCurve", {}).get("m_Curve", [{}])
+				for curvept in curve_points:
+					slope_estimate += curvept.get("outSlope", 0.0)
+				slope_estimate /= len(curve_points)
+				if slope_estimate < -5.0:
+					outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
+				elif slope_estimate < -0.1:
+					outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+				else:
+					outdict["attenuation_model"] = AudioStreamPlayer3D.ATTENUATION_DISABLED
+				# TODO: How does unit_size work?
 		return outdict
 
 
@@ -6070,9 +6079,9 @@ class UnidotCamera:
 			viewport.size = Vector2(rendertex.keys.get("m_Width"), rendertex.keys.get("m_Height"))
 			if keys.get("m_AllowMSAA", 0) == 1:
 				if rendertex.keys.get("m_AntiAliasing", 0) == 1:
-					viewport.msaa = Viewport.MSAA_8X
+					viewport.msaa_3d = Viewport.MSAA_8X
 			viewport.use_occlusion_culling = keys.get("m_OcclusionCulling", 0)
-			viewport.clear_mode = (SubViewport.CLEAR_MODE_ALWAYS if keys.get("m_ClearFlags") < 3 else SubViewport.CLEAR_MODE_NEVER)
+			viewport.render_target_clear_mode = (SubViewport.CLEAR_MODE_ALWAYS if keys.get("m_ClearFlags") < 3 else SubViewport.CLEAR_MODE_NEVER)
 			# Godot is always HDR? if keys.get("m_AllowHDR", 0) == 1
 			par = viewport
 		var cam: Camera3D = Camera3D.new()

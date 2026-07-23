@@ -568,8 +568,10 @@ class SceneHandler:
 		var is_prefab = pkgasset.orig_pathname.get_extension().to_lower() != "scene"
 		var packed_scene: PackedScene = convert_scene.new().pack_scene(pkgasset, is_prefab)
 		if packed_scene != null:
-			unidot_utils.save_resource(packed_scene, "res://" + pkgasset.pathname)
-			unidot_utils.editor_interface.reload_scene_from_path("res://" + pkgasset.pathname)
+			var scene_path: String = "res://" + str(pkgasset.pathname)
+			unidot_utils.save_resource(packed_scene, scene_path)
+			if scene_path in unidot_utils.editor_interface.get_open_scenes():
+				unidot_utils.editor_interface.reload_scene_from_path(scene_path)
 			return true
 		return false
 

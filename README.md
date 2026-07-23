@@ -27,7 +27,7 @@ Please use a version of Godot 4.0 or later with FBX2glTF configured in Editor Se
 
 ## System requirements:
 
-Unidot has been tested on Windows, macOS and Linux versions. Currently supports Godot Editor versions 4.0 through 4.2.
+Unidot has been tested on Windows, macOS and Linux versions. It supports Godot Editor versions 4.0 through 4.2, with compatibility smoke-tested on Godot 4.7.1.
 
 Unidot recommends a system with at least 16GB of RAM for many assets. It is uncommon for large imports to take more than 10-12GB.
 
