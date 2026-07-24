@@ -176,3 +176,36 @@ Special Thanks to
 * The [V-Sekai team](https://v-sekai.org) for contributions and inspiration.
 
 ![Screenshot showing an import dialog open with a scene underneath](./unidot_example.jpg)
+
+## HDNua update
+
+### Godot 4.7.1 and Synty POLYGON Prototype validation
+
+The HDNua fork has been tested with the Synty **POLYGON - Prototype Pack**
+`.unitypackage` on Godot `4.7.1-stable.mono` for macOS. The validated
+configuration used the native Godot FBX importer, imported into
+`res://Unidot`, and saved translated resources and scenes as text.
+
+Validated results with importer revision
+`5b88bb63796771d873c4c21b0db99bc4a7c3cf68`:
+
+- `2,291` package assets selected and `5,944` output files generated.
+- All `496` POLYGON Prototype prefabs and `2` regular scenes loaded and
+  instantiated (`498/498`).
+- All `13` expected representative albedo texture mappings matched.
+- The POLYGON Prototype validation found `0` missing mesh, material, or
+  collision-shape bindings.
+- All generated Synty scenes from the package loaded successfully (`989/989`,
+  including POLYGON Generic and POLYGON Prototype content).
+
+The material mapping update recognizes underscored Unity texture properties
+such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map`, while
+preventing mask, normal, metallic, roughness, and emission textures from being
+selected as generic albedo fallbacks.
+
+This is a compatibility result for this package and configuration, not a claim
+that every Synty package or every Unity feature is fully supported. Custom
+ShaderGraph/SubGraph content, MonoBehaviours, ParticleSystems, and source assets
+with missing external references may still require manual work.
+
+![Synty POLYGON Prototype demo imported with Unidot in Godot 4.7.1](./hdnua_synty_polygon_prototype_godot_4_7_1.png)
