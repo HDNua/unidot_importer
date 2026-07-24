@@ -174,10 +174,13 @@ func get_meta_at_path(path: String) -> Resource:  # asset_meta
 	return ret
 
 
-func get_meta_by_guid(guid: String) -> Resource:  # asset_meta
+func get_meta_by_guid(guid: String, output_root: Variant = null) -> Resource:  # asset_meta
 	var path = guid_to_path.get(guid, "")
 	if not str(path).is_empty():
-		return get_meta_at_path(path)
+		var meta := get_meta_at_path(path)
+		if output_root != null and not asset_meta_class.is_meta_in_output_root(meta, str(output_root)):
+			return null
+		return meta
 	return null
 
 

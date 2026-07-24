@@ -60,6 +60,8 @@ are confined to that destination so existing project assets are not linked by
 accident.
 The importer assumes a trusted project tree and does not sandbox writes against
 pre-existing symlinks or junctions inside the project.
+The asset database keeps one active output path per Unity GUID, so importing the
+same package into multiple destinations in one project is not supported.
 
 ![Screenshot showing FBX2glTF in Editor Settings, and enabling the plugin in Project Settings](./unidot_instructions.png)
 

@@ -511,6 +511,89 @@ func human_readable_fileid_heuristic(fileID: int) -> String:
 		return HUMAN_READABLE_NAMES[fileID]
 	return str(fileID)
 
+
+func _dependency_exists_in_output_root(
+	guid_meta: Resource,
+	package_dependency: Object,
+	configured_output_root: String,
+	da: DirAccess
+) -> bool:
+	if guid_meta == null:
+		return false
+	var source_dependency_path: String = (
+		guid_meta.orig_path
+		if package_dependency == null
+		else package_dependency.orig_pathname
+	)
+	if package_dependency != null and guid_meta.orig_path != package_dependency.orig_pathname:
+		return false
+	return (
+		da.file_exists(guid_meta.path)
+		and package_file.is_output_path_for_source(
+			configured_output_root,
+			source_dependency_path,
+			guid_meta.path
+		)
+	)
+
+
+func _record_dependency(source_guid: String, target_guid: String, file_id: Variant) -> void:
+	if not guid_to_dependency_guids.has(source_guid):
+		guid_to_dependency_guids[source_guid] = {}
+	guid_to_dependency_guids[source_guid][target_guid] = file_id
+	if not dependency_guids_to_guid.has(target_guid):
+		dependency_guids_to_guid[target_guid] = {}
+	dependency_guids_to_guid[target_guid][source_guid] = file_id
+
+
+func _rebuild_dependency_graph(configured_output_root: String) -> void:
+	guid_to_dependency_guids.clear()
+	dependency_guids_to_guid.clear()
+	var da := DirAccess.open("res://")
+	for source_guid in pkg.guid_to_pkgasset:
+		var pkgasset = pkg.guid_to_pkgasset[source_guid]
+		if pkgasset.parsed_meta == null:
+			continue
+		var dep_guids: Dictionary = pkgasset.parsed_meta.meta_dependency_guids.duplicate()
+		for target_guid in pkgasset.parsed_meta.dependency_guids:
+			dep_guids[target_guid] = pkgasset.parsed_meta.dependency_guids[target_guid]
+		for target_guid in dep_guids:
+			var guid_meta = asset_database.get_meta_by_guid(target_guid)
+			var package_dependency = pkg.guid_to_pkgasset.get(target_guid)
+			if _dependency_exists_in_output_root(
+				guid_meta,
+				package_dependency,
+				configured_output_root,
+				da
+			):
+				continue
+			_record_dependency(source_guid, target_guid, dep_guids[target_guid])
+
+
+func _select_required_dependencies() -> void:
+	if dont_auto_select_dependencies_checkbox.button_pressed:
+		return
+	var checked_items: Array[TreeItem] = []
+	for path in path_to_tree_item:
+		var item: TreeItem = path_to_tree_item[path]
+		if item != null and item.is_checked(0):
+			checked_items.append(item)
+	for item in checked_items:
+		_check_recursively(item, true, true)
+
+
+func _get_selected_asset_guids() -> Dictionary:
+	var selected_guids: Dictionary = {}
+	for path in path_to_tree_item:
+		var item: TreeItem = path_to_tree_item[path]
+		if item == null or not item.is_checked(0):
+			continue
+		var asset = pkg.path_to_pkgasset.get(path)
+		if asset != null:
+			selected_guids[asset.guid] = true
+	return selected_guids
+
+
 func _meta_completed(tw: Object):
 	_meta_work_count -= 1
 	var pkgasset = tw.asset
@@ -544,34 +627,17 @@ func _meta_completed(tw: Object):
 		for guid in dep_guids:
 			var guid_meta = asset_database.get_meta_by_guid(guid)
 			var package_dependency = pkg.guid_to_pkgasset.get(guid)
-			var source_dependency_path := ""
-			if package_dependency != null:
-				source_dependency_path = package_dependency.orig_pathname
-			elif guid_meta != null:
-				source_dependency_path = guid_meta.orig_path
-			var source_identity_matches: bool = (
-				guid_meta != null
-				and (package_dependency == null or guid_meta.orig_path == package_dependency.orig_pathname)
-			)
-			if (
-				source_identity_matches
-				and da.file_exists(guid_meta.path)
-				and package_file.is_output_path_for_source(
-					configured_output_root,
-					source_dependency_path,
-					guid_meta.path
-				)
+			if _dependency_exists_in_output_root(
+				guid_meta,
+				package_dependency,
+				configured_output_root,
+				da
 			):
 				# No need to force selection
 				continue
 			if guid_meta == null and not pkg.guid_to_pkgasset.has(guid):
 				push_error("Asset " + pkgasset.parsed_meta.path + " depends on missing GUID " + guid + " fileID " + human_readable_fileid_heuristic(dep_guids[guid]))
-			if not guid_to_dependency_guids.has(pkgasset.guid):
-				guid_to_dependency_guids[pkgasset.guid] = {}
-			guid_to_dependency_guids[pkgasset.guid][guid] = dep_guids[guid]
-			if not dependency_guids_to_guid.has(guid):
-				dependency_guids_to_guid[guid] = {}
-			dependency_guids_to_guid[guid][pkgasset.guid] = dep_guids[guid]
+			_record_dependency(pkgasset.guid, guid, dep_guids[guid])
 	ti.set_text(1, "Scene" if pkgasset.orig_pathname.to_lower().ends_with(".scene") else importer_type)
 	var cls: String
 	if importer_type.begins_with("["):
@@ -1795,7 +1861,10 @@ func _preprocess_second_pass():
 			if pkg.guid_to_pkgasset.has(dep):
 				asset.meta_dependencies[dep] = pkg.guid_to_pkgasset[dep].parsed_meta
 			else:
-				asset.meta_dependencies[dep] = asset_database.get_meta_by_guid(dep)
+				asset.meta_dependencies[dep] = asset_database.get_meta_by_guid(
+					dep,
+					asset.parsed_meta.import_output_root
+				)
 		pkgassets.append(asset)
 	for i in range(len(second_pass)):
 		self.import_worker.push_asset(pkgassets[i], tmpdir, second_pass[i])
@@ -1948,6 +2017,9 @@ func _asset_tree_window_confirmed():
 		return
 	if tree_dialog_state != STATE_DIALOG_SHOWING:
 		return
+	if _meta_work_count > 0:
+		status_bar.text = "Waiting for metadata... " + str(_meta_work_count) + " remaining."
+		return
 	var configured_output_root := import_output_root_line_edit.text if import_output_root_line_edit != null else _get_configured_output_root()
 	var output_root_error := package_file.validate_output_root(configured_output_root)
 	if not output_root_error.is_empty():
@@ -1955,7 +2027,15 @@ func _asset_tree_window_confirmed():
 		if import_output_root_line_edit != null:
 			import_output_root_line_edit.grab_focus()
 		return
-	var output_mapping_error: Error = pkg.validate_output_mapping(configured_output_root)
+	asset_database.log_debug([null, 0, "", 0], "Finishing meta.")
+	meta_worker.stop_all_threads_and_wait()
+	asset_database.log_debug([null, 0, "", 0], "Joined meta.")
+	_rebuild_dependency_graph(package_file.normalize_output_root(configured_output_root))
+	_select_required_dependencies()
+	var output_mapping_error: Error = pkg.validate_output_mapping(
+		configured_output_root,
+		_get_selected_asset_guids()
+	)
 	if output_mapping_error != OK:
 		status_bar.text = "Unable to use import destination: " + error_string(output_mapping_error)
 		return
@@ -2014,9 +2094,6 @@ func _asset_tree_window_confirmed():
 	global_logs_tree_item.set_text(log_column, "Status")
 	global_logs_tree_item.set_selectable(log_column, true)
 
-	asset_database.log_debug([null, 0, "", 0], "Finishing meta.")
-	meta_worker.stop_all_threads_and_wait()
-	asset_database.log_debug([null, 0, "", 0], "Joined meta.")
 	var apply_root_error: Error = pkg.apply_output_root(configured_output_root)
 	if apply_root_error != OK:
 		asset_database.log_fail([null, 0, "", 0], "Unable to apply import destination " + configured_output_root + ": " + error_string(apply_root_error))

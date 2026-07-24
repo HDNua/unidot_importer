@@ -272,7 +272,11 @@ func toposort_prefab_recurse(meta: Resource, tt: TopsortTmp):
 	for target_guid in meta.prefab_dependency_guids:
 		if not tt.visited.has(target_guid):
 			tt.visited[target_guid] = true
-			var child_meta: Resource = lookup_meta_by_guid_noinit(tt.database, target_guid)
+			var child_meta: Resource = lookup_meta_by_guid_noinit(
+				tt.database,
+				target_guid,
+				meta.import_output_root
+			)
 			if child_meta == null:
 				log_fail(0, "Unable to find dependency " + str(target_guid) + " of type " + str(meta.dependency_guids.get(target_guid, "")), "prefab", [null, -1, target_guid, -1])
 			else:
@@ -370,7 +374,11 @@ func remap_prefab_gameobject_names(prefab_id: int, target_prefab_meta: Resource,
 func calculate_prefab_nodepaths(database: Resource):
 	#if not is_toplevel:
 	for prefab_fileid in self.prefab_id_to_guid:
-		var target_prefab_meta: Resource = lookup_meta_by_guid_noinit(database, self.prefab_id_to_guid.get(prefab_fileid))
+		var target_prefab_meta: Resource = lookup_meta_by_guid_noinit(
+			database,
+			self.prefab_id_to_guid.get(prefab_fileid),
+			import_output_root
+		)
 		if target_prefab_meta == null:
 			log_fail(
 				0,
@@ -519,16 +527,34 @@ func initialize(database: Resource):
 	self.importer.keys = importer_keys
 
 
-static func lookup_meta_by_guid_noinit(database: Resource, target_guid: String) -> RefCounted:  # returns asset_meta type
+static func is_meta_in_output_root(meta: Resource, output_root: String) -> bool:
+	if meta == null:
+		return false
+	if meta.path == "Library/default resources" or meta.path == "Resources/builtin_extra":
+		return true
+	return meta.import_output_root == output_root
+
+
+static func lookup_meta_by_guid_noinit(
+	database: Resource,
+	target_guid: String,
+	output_root: Variant = null
+) -> RefCounted:  # returns asset_meta type
 	var found_path: String = database.guid_to_path.get(target_guid, "")
 	var found_meta: Resource = null
 	if not found_path.is_empty():
 		found_meta = database.path_to_meta.get(found_path, null)
+	if output_root != null and not is_meta_in_output_root(found_meta, str(output_root)):
+		return null
 	return found_meta
 
 
 func lookup_meta_by_guid(target_guid: String) -> Resource:  # returns asset_meta type
-	var found_meta: Resource = lookup_meta_by_guid_noinit(get_database(), target_guid)
+	var found_meta: Resource = lookup_meta_by_guid_noinit(
+		get_database(),
+		target_guid,
+		import_output_root
+	)
 	if found_meta == null:
 		return null
 	if found_meta.get_database() == null:
@@ -657,10 +683,11 @@ func get_godot_resource(unidot_ref: Array, silent: bool = false) -> Resource:
 	var found_meta: Resource = lookup_meta(unidot_ref)
 	if found_meta == null:
 		if len(unidot_ref) == 4 and unidot_ref[1] != 0:
-			var found_path: String = get_database().guid_to_path.get(unidot_ref[2], "")
+			var fallback_meta: Resource = lookup_meta_by_guid(unidot_ref[2])
+			var found_path: String = "" if fallback_meta == null else fallback_meta.path
 			if not silent:
 				log_warn(0, "Resource with no meta. Try blindly loading it: " + str(unidot_ref) + "/" + found_path, "ref", unidot_ref)
-			return load("res://" + found_path)
+			return null if found_path.is_empty() else load("res://" + found_path)
 		return null
 	var local_id: int = unidot_ref[1]
 	# log_debug(0, "guid:" + str(found_meta.guid) +" path:" + str(found_meta.path) + " main_obj:" + str(found_meta.main_object_id) + " local_id:" + str(local_id))

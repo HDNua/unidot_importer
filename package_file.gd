@@ -126,13 +126,15 @@ static func is_output_path_for_source(root: String, source_path: String, output_
 	return map_output_path(root, source_path).get_base_dir() == output_path.get_base_dir()
 
 
-func validate_output_mapping(value: String) -> Error:
+func validate_output_mapping(value: String, selected_guids: Variant = null) -> Error:
 	var validation_error := validate_output_root(value)
 	if not validation_error.is_empty():
 		return ERR_INVALID_PARAMETER
 	var normalized_root := normalize_output_root(value)
 	var output_paths: Dictionary = {}
 	for guid in guid_to_pkgasset:
+		if selected_guids != null and not selected_guids.has(guid):
+			continue
 		var pkgasset: PkgAsset = guid_to_pkgasset[guid]
 		var mapped_path := map_output_path(normalized_root, pkgasset.orig_pathname)
 		if output_paths.has(mapped_path):
