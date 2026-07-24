@@ -88,6 +88,9 @@ var force_humanoid_checkbox: CheckBox
 var enable_verbose_log_checkbox: CheckBox
 var enable_vrm_spring_bones_checkbox: CheckBox
 var convert_fbx_to_gltf_checkbox: CheckBox
+var import_output_root_line_edit: LineEdit
+var import_output_root_override: String = ""
+var import_output_root_override_set: bool = false
 
 var batch_import_list_widget: ItemList
 var batch_import_add_button: Button
@@ -537,9 +540,28 @@ func _meta_completed(tw: Object):
 		for guid in pkgasset.parsed_meta.dependency_guids:
 			dep_guids[guid] = pkgasset.parsed_meta.dependency_guids[guid]
 		var da := DirAccess.open("res://")
+		var configured_output_root := _get_configured_output_root()
 		for guid in dep_guids:
 			var guid_meta = asset_database.get_meta_by_guid(guid)
-			if guid_meta != null and da.file_exists(guid_meta.path):
+			var package_dependency = pkg.guid_to_pkgasset.get(guid)
+			var source_dependency_path := ""
+			if package_dependency != null:
+				source_dependency_path = package_dependency.orig_pathname
+			elif guid_meta != null:
+				source_dependency_path = guid_meta.orig_path
+			var source_identity_matches: bool = (
+				guid_meta != null
+				and (package_dependency == null or guid_meta.orig_path == package_dependency.orig_pathname)
+			)
+			if (
+				source_identity_matches
+				and da.file_exists(guid_meta.path)
+				and package_file.is_output_path_for_source(
+					configured_output_root,
+					source_dependency_path,
+					guid_meta.path
+				)
+			):
 				# No need to force selection
 				continue
 			if guid_meta == null and not pkg.guid_to_pkgasset.has(guid):
@@ -770,6 +792,13 @@ func _selected_package(p_path: String) -> void:
 	asset_database.in_package_import = true
 	asset_database.log_debug([null, 0, "", 0], "Asset database object returned " + str(asset_database))
 
+	var configured_output_root := asset_database.import_output_root
+	var project_output_root := str(ProjectSettings.get_setting("unidot/import_output_root", ""))
+	if not project_output_root.is_empty():
+		configured_output_root = project_output_root
+	if import_output_root_override_set:
+		configured_output_root = import_output_root_override
+	import_output_root_line_edit = _add_output_root_option(configured_output_root)
 	dont_auto_select_dependencies_checkbox = _add_checkbox_option("Hold shift to select dependencies", false if asset_database.auto_select_dependencies else true)
 	dont_auto_select_dependencies_checkbox.toggled.connect(self._dont_auto_select_dependencies_checkbox_changed)
 	save_text_resources = _add_advanced_checkbox_option("Save resources as text .tres (slow)", true if asset_database.use_text_resources else false)
@@ -995,6 +1024,48 @@ func _add_advanced_checkbox_option(optname: String, defl: bool):
 	if defl and not show_advanced_options.button_pressed:
 		show_advanced_options.button_pressed = true
 	return _add_checkbox_option(optname, defl, advanced_options_vbox)
+
+
+func _add_output_root_option(current_root: String) -> LineEdit:
+	var label := Label.new()
+	label.text = "Import destination"
+	label.tooltip_text = "Unity Assets/... paths are created below this Godot project folder."
+	options_vbox.add_child(label)
+	var line_edit := LineEdit.new()
+	line_edit.placeholder_text = "res:// (project root)"
+	line_edit.tooltip_text = "Example: res://Unidot creates res://Unidot/Assets/..."
+	line_edit.text = "res://" if current_root.is_empty() else (
+		current_root if current_root.begins_with("res://") else "res://" + current_root
+	)
+	options_vbox.add_child(line_edit)
+	return line_edit
+
+
+func _get_configured_output_root() -> String:
+	if import_output_root_line_edit != null:
+		return package_file.normalize_output_root(import_output_root_line_edit.text)
+	if import_output_root_override_set:
+		return package_file.normalize_output_root(import_output_root_override)
+	var project_output_root := str(ProjectSettings.get_setting("unidot/import_output_root", ""))
+	if not project_output_root.is_empty():
+		return package_file.normalize_output_root(project_output_root)
+	if asset_database != null:
+		return package_file.normalize_output_root(asset_database.import_output_root)
+	return ""
+
+
+func set_import_output_root(value: String) -> Error:
+	var validation_error := package_file.validate_output_root(value)
+	if not validation_error.is_empty():
+		return ERR_INVALID_PARAMETER
+	import_output_root_override = package_file.normalize_output_root(value)
+	import_output_root_override_set = true
+	if import_output_root_line_edit != null:
+		import_output_root_line_edit.text = (
+			"res://" if import_output_root_override.is_empty()
+			else "res://" + import_output_root_override
+		)
+	return OK
 
 
 func _save_text_resources_changed(val: bool):
@@ -1271,6 +1342,7 @@ func on_import_fully_completed():
 		rc.batch_import_types = batch_import_types
 		rc.auto_import = true
 		rc._keep_open_on_import = _keep_open_on_import
+		rc.set_import_output_root("res://" + pkg.output_root)
 		rc._selected_package(batch_import_file_list[0])
 		rc.batch_import_file_list = batch_import_file_list.slice(1)
 		rc.batch_import_types = batch_import_types
@@ -1870,6 +1942,23 @@ func _preprocess_wait_tick():
 
 
 func _asset_tree_window_confirmed():
+	if import_finished:
+		if main_dialog:
+			main_dialog.hide()
+		return
+	if tree_dialog_state != STATE_DIALOG_SHOWING:
+		return
+	var configured_output_root := import_output_root_line_edit.text if import_output_root_line_edit != null else _get_configured_output_root()
+	var output_root_error := package_file.validate_output_root(configured_output_root)
+	if not output_root_error.is_empty():
+		status_bar.text = "Invalid import destination: " + output_root_error
+		if import_output_root_line_edit != null:
+			import_output_root_line_edit.grab_focus()
+		return
+	var output_mapping_error: Error = pkg.validate_output_mapping(configured_output_root)
+	if output_mapping_error != OK:
+		status_bar.text = "Unable to use import destination: " + error_string(output_mapping_error)
+		return
 	hide_button.text = "            Hide            "
 	pause_button = main_dialog.add_button("        Pause        ", false, "pause_import")
 	pause_button.toggle_mode = true
@@ -1902,13 +1991,6 @@ func _asset_tree_window_confirmed():
 	main_dialog_tree.set_column_expand_ratio(3, 0.1)
 	main_dialog_tree.set_column_expand_ratio(4, 0.1)
 
-	if import_finished:
-		if main_dialog:
-			main_dialog.hide()
-		return
-	if tree_dialog_state != STATE_DIALOG_SHOWING:
-		return
-
 	var root_item := main_dialog_tree.get_root()
 	var toplevel_items := root_item.get_children()
 	for toplevel_child in toplevel_items:
@@ -1935,6 +2017,13 @@ func _asset_tree_window_confirmed():
 	asset_database.log_debug([null, 0, "", 0], "Finishing meta.")
 	meta_worker.stop_all_threads_and_wait()
 	asset_database.log_debug([null, 0, "", 0], "Joined meta.")
+	var apply_root_error: Error = pkg.apply_output_root(configured_output_root)
+	if apply_root_error != OK:
+		asset_database.log_fail([null, 0, "", 0], "Unable to apply import destination " + configured_output_root + ": " + error_string(apply_root_error))
+		status_bar.text = "Unable to apply import destination: " + error_string(apply_root_error)
+		return
+	asset_database.import_output_root = pkg.output_root
+	asset_database.log_debug([null, 0, "", 0], "Import destination is res://" + pkg.output_root)
 	tree_dialog_state = STATE_PREPROCESSING
 	written_additional_textures = false
 	import_worker.asset_database = asset_database

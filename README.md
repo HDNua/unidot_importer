@@ -42,6 +42,25 @@ Due to pre-caching of assets in memory, it is okay if some data is swapped to di
 4. To add TIFF / .tif and PSD / .psd support, install [ImageMagick](https://imagemagick.org/) or [GraphicsMagick](http://www.graphicsmagick.org/) into your system path or copy convert.exe into this addon directory.
 5. Access the importer through `Project -> Tools -> Import .unitypackage...` and select a package or an asset folder
 
+### Import destination
+
+The import dialog can place translated assets below a project-relative destination
+without changing their Unity source paths. The default remains `res://` for
+backward compatibility. For example, selecting `res://Unidot` maps:
+
+```text
+Assets/Example/Model.fbx -> res://Unidot/Assets/Example/Model.fbx
+```
+
+Projects may provide a default with the `unidot/import_output_root` project
+setting. The destination must remain inside `res://`; absolute paths, `user://`,
+backslashes, and relative `.` or `..` segments are rejected.
+When a non-root destination is selected, fallback texture and material searches
+are confined to that destination so existing project assets are not linked by
+accident.
+The importer assumes a trusted project tree and does not sandbox writes against
+pre-existing symlinks or junctions inside the project.
+
 ![Screenshot showing FBX2glTF in Editor Settings, and enabling the plugin in Project Settings](./unidot_instructions.png)
 
 Read more at our [documentation site](https://docs.unidotengine.org).

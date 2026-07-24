@@ -27,6 +27,7 @@ var log_message_holder = asset_meta_class.LogMessageHolder.new()
 @export var set_animation_trees_active: bool = true
 @export var vrm_spring_bones: bool = true
 @export var convert_fbx_to_gltf: bool = false
+@export var import_output_root: String = ""
 var vrm_integration_plugin
 var log_limit_per_guid: int = 100000
 
@@ -188,6 +189,7 @@ func create_dummy_meta(asset_path: String) -> Resource:  # asset_meta
 	var meta = asset_meta_class.new()
 	meta.set_log_database(self)
 	meta.init_with_file(null, asset_path)
+	meta.import_output_root = import_output_root
 	meta.path = asset_path
 	meta.orig_path = asset_path
 	meta.orig_path_short = asset_path

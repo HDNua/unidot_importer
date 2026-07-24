@@ -183,12 +183,23 @@ class ParseState:
 		# return source_file_path.get_basename() + "." + str(fileId) + extension
 		var retlist: Array = []
 		var basedir: String = source_file_path.get_base_dir()
-		while basedir != "res://" and basedir != "/" and not basedir.is_empty() and basedir != ".":
+		var configured_root: String = metaobj.import_output_root
+		var search_root: String = "res://" if configured_root.is_empty() else "res://" + configured_root
+		while (
+			basedir != "res://"
+			and basedir != "/"
+			and not basedir.is_empty()
+			and basedir != "."
+			and (search_root == "res://" or basedir == search_root or basedir.begins_with(search_root + "/"))
+		):
 			retlist.append(get_materials_path_base(material_name, basedir, ".mat.tres"))
 			retlist.append(get_materials_path_base(material_name, basedir, ".material"))
+			if basedir == search_root:
+				break
 			basedir = basedir.get_base_dir()
-		retlist.append(get_materials_path_base(material_name, "res://", ".mat.tres"))
-		retlist.append(get_materials_path_base(material_name, "res://", ".material"))
+		if search_root == "res://":
+			retlist.append(get_materials_path_base(material_name, "res://", ".mat.tres"))
+			retlist.append(get_materials_path_base(material_name, "res://", ".material"))
 		metaobj.log_debug(0, "Looking in directories " + str(retlist))
 		return retlist
 
@@ -693,6 +704,12 @@ class ParseState:
 							if mat == null and materialSearch >= 2:
 								# and material in the whole project with this name!!
 								for pathname in asset_database.path_to_meta:
+									if (
+										not metaobj.import_output_root.is_empty()
+										and pathname != metaobj.import_output_root
+										and not pathname.begins_with(metaobj.import_output_root + "/")
+									):
+										continue
 									if pathname.get_file() == legacy_material_name + ".material" or pathname.get_file() == godot_mat_name + ".mat.tres" or pathname.get_file() == godot_mat_name + ".mat.res":
 										legacy_material_name = pathname
 										mat = load(pathname)

@@ -75,7 +75,91 @@ class PkgAsset:
 
 var paths: Array = [].duplicate()
 var path_to_pkgasset: Dictionary = {}.duplicate()
+var output_path_to_pkgasset: Dictionary = {}.duplicate()
 var guid_to_pkgasset: Dictionary = {}.duplicate()
+var output_root: String = ""
+
+
+static func validate_output_root(value: String) -> String:
+	var normalized := value.strip_edges()
+	if normalized.is_empty() or normalized == "res://":
+		return ""
+	if normalized.contains("\\"):
+		return "Backslashes are not allowed."
+	if normalized.begins_with("res://"):
+		normalized = normalized.trim_prefix("res://")
+	elif normalized.contains("://") or normalized.begins_with("/"):
+		return "The destination must be inside res://."
+	normalized = normalized.trim_suffix("/")
+	if normalized.is_empty():
+		return ""
+	if normalized.contains("//"):
+		return "Empty path segments are not allowed."
+	for segment in normalized.split("/"):
+		if segment.is_empty() or segment == "." or segment == "..":
+			return "Relative path segments are not allowed."
+		if segment.validate_filename() != segment:
+			return "Invalid path segment: " + segment
+	return ""
+
+
+static func normalize_output_root(value: String) -> String:
+	var normalized := value.strip_edges()
+	if normalized.begins_with("res://"):
+		normalized = normalized.trim_prefix("res://")
+	return normalized.trim_suffix("/")
+
+
+static func map_output_path(root: String, source_path: String) -> String:
+	var normalized_root := normalize_output_root(root)
+	if normalized_root.is_empty():
+		return source_path
+	return normalized_root.path_join(source_path)
+
+
+static func is_output_path_for_source(root: String, source_path: String, output_path: String) -> bool:
+	if source_path.is_empty() or output_path.is_empty():
+		return false
+	# Import handlers may replace or append extensions (.scene -> .tscn,
+	# .mat -> .mat.tres), but the primary asset remains in the mapped source
+	# directory. The GUID and AssetMeta.orig_path provide the file identity.
+	return map_output_path(root, source_path).get_base_dir() == output_path.get_base_dir()
+
+
+func validate_output_mapping(value: String) -> Error:
+	var validation_error := validate_output_root(value)
+	if not validation_error.is_empty():
+		return ERR_INVALID_PARAMETER
+	var normalized_root := normalize_output_root(value)
+	var output_paths: Dictionary = {}
+	for guid in guid_to_pkgasset:
+		var pkgasset: PkgAsset = guid_to_pkgasset[guid]
+		var mapped_path := map_output_path(normalized_root, pkgasset.orig_pathname)
+		if output_paths.has(mapped_path):
+			return ERR_ALREADY_EXISTS
+		output_paths[mapped_path] = true
+	return OK
+
+
+func apply_output_root(value: String) -> Error:
+	var mapping_error := validate_output_mapping(value)
+	if mapping_error != OK:
+		return mapping_error
+	var normalized_root := normalize_output_root(value)
+	var new_output_paths: Dictionary = {}
+	for guid in guid_to_pkgasset:
+		var pkgasset: PkgAsset = guid_to_pkgasset[guid]
+		var mapped_path := map_output_path(normalized_root, pkgasset.orig_pathname)
+		new_output_paths[mapped_path] = pkgasset
+	output_root = normalized_root
+	output_path_to_pkgasset = new_output_paths
+	for mapped_path in output_path_to_pkgasset:
+		var pkgasset: PkgAsset = output_path_to_pkgasset[mapped_path]
+		pkgasset.pathname = mapped_path
+		if pkgasset.parsed_meta != null:
+			pkgasset.parsed_meta.path = mapped_path
+			pkgasset.parsed_meta.import_output_root = normalized_root
+	return OK
 
 
 func external_tar_with_filename(source_file: String, full_tmpdir: String=""):

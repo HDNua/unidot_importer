@@ -1380,17 +1380,22 @@ class FbxHandler:
 			filename = filename.substr(len(basedir) + 1)
 		return path_beginning + filename
 
-	func _scan_project_for_textures(filename_dict: Dictionary, efsdir: EditorFileSystemDirectory = null):
+	func _scan_project_for_textures(filename_dict: Dictionary, output_root: String = "", efsdir: EditorFileSystemDirectory = null):
 		if efsdir == null:
 			var fs: EditorFileSystem = EditorPlugin.new().get_editor_interface().get_resource_filesystem()
-			efsdir = fs.get_filesystem()
+			if output_root.is_empty():
+				efsdir = fs.get_filesystem()
+			else:
+				efsdir = fs.get_filesystem_path("res://" + output_root)
+			if efsdir == null:
+				return
 		for i in range(efsdir.get_file_count()):
 			var lowerfn: String = efsdir.get_file(i).to_lower()
 			for texname in filename_dict.keys():
 				if lowerfn == texname.to_lower():
 					filename_dict[texname] = efsdir.get_path() + "/" + efsdir.get_file(i)
 		for i in range(efsdir.get_subdir_count()):
-			_scan_project_for_textures(filename_dict, efsdir.get_subdir(i))
+			_scan_project_for_textures(filename_dict, output_root, efsdir.get_subdir(i))
 
 	func write_and_preprocess_asset(pkgasset: Object, tmpdir: String, thread_subdir: String) -> String:
 		var full_tmpdir: String = tmpdir + "/" + thread_subdir
@@ -1482,21 +1487,27 @@ class FbxHandler:
 			var candidate_texture_dict = _get_parent_textures_paths(output_dirname + "/" + unique_texture_map[fn])
 			var tex_exists: bool = false
 			for candidate_fn in candidate_texture_dict:
+				if (
+					not pkgasset.packagefile.output_root.is_empty()
+					and candidate_fn != pkgasset.packagefile.output_root
+					and not candidate_fn.begins_with(pkgasset.packagefile.output_root + "/")
+				):
+					continue
 				#pkgasset.log_debug("candidate " + str(candidate_fn) + " INPKG=" + str(pkgasset.packagefile.path_to_pkgasset.has(candidate_fn)) + " FILEEXIST=" + str(d.file_exists(candidate_fn)))
-				if pkgasset.packagefile.path_to_pkgasset.has(candidate_fn) or file_exists_hack(d, candidate_fn):
+				if pkgasset.packagefile.output_path_to_pkgasset.has(candidate_fn) or file_exists_hack(d, candidate_fn):
 					unique_texture_map[fn] = candidate_texture_dict[candidate_fn]
 					tex_exists = true
 					break
 			if not tex_exists:
 				tex_not_exists[fn] = ""
 		if not tex_not_exists.is_empty():
-			for fn in pkgasset.packagefile.path_to_pkgasset:
+			for fn in pkgasset.packagefile.output_path_to_pkgasset:
 				for texname in tex_not_exists.keys():
 					if fn.get_file().to_lower() == texname.to_lower():
 						unique_texture_map[texname] = _make_relative_to(fn, output_dirname)
 						tex_not_exists.erase(texname)
 		if not tex_not_exists.is_empty():
-			_scan_project_for_textures(tex_not_exists)
+			_scan_project_for_textures(tex_not_exists, pkgasset.packagefile.output_root)
 			for texname in tex_not_exists.keys():
 				if not tex_not_exists[texname].is_empty():
 					unique_texture_map[texname] = _make_relative_to(tex_not_exists[texname], output_dirname)
@@ -2623,8 +2634,8 @@ func preprocess_asset(asset_database: Object, pkgasset: Object, tmpdir: String, 
 	var path = pkgasset.orig_pathname
 	var asset_handler: AssetHandler = file_handlers.get(path.get_extension().to_lower(), file_handlers.get("default"))
 	var dres = DirAccess.open("res://")
-	dres.make_dir_recursive(path.get_base_dir())
-	dres.make_dir_recursive(tmpdir + "/" + path.get_base_dir())
+	dres.make_dir_recursive(pkgasset.pathname.get_base_dir())
+	dres.make_dir_recursive(tmpdir + "/" + pkgasset.pathname.get_base_dir())
 	dres.make_dir_recursive(tmpdir + "/" + thread_subdir)
 
 	if pkgasset.metadata_tar_header != null and pkgasset.parsed_meta == null:

@@ -45,6 +45,7 @@ var log_message_holder = LogMessageHolder.new()
 var mutex := Mutex.new() # Currently used only in bake_roughness_textures_if_needed
 @export var path: String = ""
 @export var orig_path: String = ""
+@export var import_output_root: String = ""
 var orig_path_short: String
 @export var guid: String = ""
 @export var importer_keys: Dictionary = {}
