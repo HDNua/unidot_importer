@@ -6,6 +6,7 @@ extends Resource
 
 const object_adapter_class := preload("./object_adapter.gd")
 const scene_node_state_class := preload("./scene_node_state.gd")
+const LIGHTING_SETTINGS_META := &"unidot_lighting_settings"
 
 
 func customComparison(a, b):
@@ -24,6 +25,224 @@ func smallestTransform(a, b):
 		return a.transform.fileID < b.transform.fileID
 	else:
 		return b.fileID < a.fileID
+
+
+func sceneRootsFileIDComparison(a, b):
+	return a.fileID < b.fileID
+
+
+func _scene_root_candidate_key(asset: Variant) -> String:
+	if asset == null:
+		return ""
+	return str(asset.type) + ":" + str(asset.fileID)
+
+
+func _resolve_scene_root_candidate(scene_roots: Variant, root_ref: Variant) -> Variant:
+	if typeof(root_ref) != TYPE_ARRAY or root_ref.size() < 2:
+		scene_roots.log_warn("SceneRoots contains an invalid root reference: " + str(root_ref), "m_Roots")
+		return null
+	var root_asset: Variant = scene_roots.meta.lookup(root_ref, true)
+	if root_asset == null:
+		scene_roots.log_warn("SceneRoots references a missing object: " + str(root_ref), "m_Roots", root_ref)
+		return null
+	if root_asset.type == "Transform" or root_asset.type == "RectTransform":
+		if root_asset.is_prefab_reference:
+			var prefab_instance: Variant = scene_roots.meta.lookup(root_asset.prefab_instance, true)
+			if prefab_instance != null and prefab_instance.type == "PrefabInstance":
+				return prefab_instance
+			scene_roots.log_warn("SceneRoots references a prefab root transform whose PrefabInstance is missing: " + str(root_ref), "m_Roots", root_ref)
+			return null
+		var game_object: Variant = root_asset.gameObject
+		if game_object == null:
+			scene_roots.log_warn("SceneRoots references a transform whose GameObject is missing: " + str(root_ref), "m_Roots", root_ref)
+			return null
+		return game_object
+	if root_asset.type == "GameObject" or root_asset.type == "PrefabInstance":
+		return root_asset
+	scene_roots.log_warn("SceneRoots references unsupported root object type " + str(root_asset.type) + ": " + str(root_ref), "m_Roots", root_ref)
+	return null
+
+
+func apply_scene_roots_order(pkgasset: Variant, fallback_roots: Array) -> Array:
+	var scene_roots_objects: Array = []
+	for asset in pkgasset.parsed_asset.assets.values():
+		if asset.type == "SceneRoots":
+			scene_roots_objects.append(asset)
+	if scene_roots_objects.is_empty():
+		return fallback_roots
+	scene_roots_objects.sort_custom(sceneRootsFileIDComparison)
+	var scene_roots: Variant = scene_roots_objects[0]
+	if scene_roots_objects.size() > 1:
+		scene_roots.log_warn(
+			"Scene contains " + str(scene_roots_objects.size()) +
+			" SceneRoots objects; using the lowest fileID " + str(scene_roots.fileID) + ".",
+			"m_Roots"
+		)
+
+	var candidates_by_key: Dictionary = {}
+	for candidate in fallback_roots:
+		candidates_by_key[_scene_root_candidate_key(candidate)] = candidate
+
+	var ordered_roots: Array = []
+	var used_keys: Dictionary = {}
+	for root_ref in scene_roots.roots:
+		var candidate: Variant = _resolve_scene_root_candidate(scene_roots, root_ref)
+		if candidate == null:
+			continue
+		var candidate_key := _scene_root_candidate_key(candidate)
+		if used_keys.has(candidate_key):
+			scene_roots.log_warn("SceneRoots contains duplicate root " + candidate_key + ".", "m_Roots", root_ref)
+			continue
+		if not candidates_by_key.has(candidate_key):
+			scene_roots.log_warn("SceneRoots object " + candidate_key + " is not a direct scene root.", "m_Roots", root_ref)
+			continue
+		ordered_roots.append(candidates_by_key[candidate_key])
+		used_keys[candidate_key] = true
+
+	for candidate in fallback_roots:
+		var candidate_key := _scene_root_candidate_key(candidate)
+		if used_keys.has(candidate_key):
+			continue
+		scene_roots.log_warn("Direct scene root " + candidate_key + " is missing from SceneRoots; appending it in fallback order.", "m_Roots")
+		ordered_roots.append(candidate)
+		used_keys[candidate_key] = true
+	return ordered_roots
+
+
+func get_lighting_settings(lightmap_settings: Variant) -> Dictionary:
+	var gi_settings: Dictionary = lightmap_settings.keys.get("m_GISettings", {})
+	var editor_settings: Dictionary = lightmap_settings.keys.get(
+		"m_LightmapEditorSettings",
+		{}
+	)
+	var settings := {
+		"enable_baked_lightmaps":
+			gi_settings.get("m_EnableBakedLightmaps", 0) != 0,
+		"enable_realtime_lightmaps":
+			gi_settings.get("m_EnableRealtimeLightmaps", 0) != 0,
+		"bounce_scale": float(gi_settings.get("m_BounceScale", 1.0)),
+		"indirect_output_scale":
+			float(gi_settings.get("m_IndirectOutputScale", 1.0)),
+		"lightmap_max_size": int(
+			editor_settings.get(
+				"m_LightmapMaxSize",
+				editor_settings.get("m_AtlasSize", 0)
+			)
+		),
+		"bake_resolution":
+			float(editor_settings.get("m_BakeResolution", 0.0)),
+		"lightmaps_bake_mode":
+			int(editor_settings.get("m_LightmapsBakeMode", 0)),
+		"pvr_bounces": int(editor_settings.get("m_PVRBounces", 3)),
+	}
+	var external_ref: Variant = lightmap_settings.keys.get(
+		"m_LightingSettings",
+		[null, 0, "", 0]
+	)
+	if typeof(external_ref) != TYPE_ARRAY or external_ref.size() < 2:
+		lightmap_settings.log_warn(
+			"LightmapSettings has an invalid m_LightingSettings reference.",
+			"m_LightingSettings"
+		)
+		return settings
+	if int(external_ref[1]) == 0:
+		return settings
+	var external_resource: Resource = lightmap_settings.meta.get_godot_resource(
+		external_ref,
+		true
+	)
+	if (
+		external_resource == null
+		or not external_resource.has_meta(LIGHTING_SETTINGS_META)
+	):
+		lightmap_settings.log_warn(
+			"Unable to load the referenced LightingSettings resource; "
+			+ "using the inline scene settings.",
+			"m_LightingSettings",
+			external_ref
+		)
+		return settings
+	var external_settings: Variant = external_resource.get_meta(
+		LIGHTING_SETTINGS_META
+	)
+	if typeof(external_settings) != TYPE_DICTIONARY:
+		lightmap_settings.log_warn(
+			"The referenced LightingSettings metadata is invalid; "
+			+ "using the inline scene settings.",
+			"m_LightingSettings",
+			external_ref
+		)
+		return settings
+	settings.merge(external_settings, true)
+	return settings
+
+
+func configure_lightmap_gi(
+	lightmap: LightmapGI,
+	settings: Dictionary,
+	log_asset: Variant = null
+) -> void:
+	# Keep the complete normalized Unity intent on the generated node. Some
+	# settings, notably realtime GI, do not have a direct LightmapGI equivalent.
+	lightmap.set_meta(LIGHTING_SETTINGS_META, settings.duplicate(true))
+	if bool(settings.get("enable_realtime_lightmaps", false)):
+		lightmap.editor_description = (
+			"Unidot preserved Unity realtime-GI authoring intent as metadata. "
+			+ "Godot LightmapGI does not provide an equivalent realtime conversion."
+		)
+		_log_lighting_warning(
+			log_asset,
+			"Unity realtime lightmaps are enabled, but Godot LightmapGI has no "
+			+ "equivalent realtime-GI conversion. The source authoring intent "
+			+ "was preserved as metadata only."
+		)
+
+	lightmap.bounces = maxi(0, int(settings.get("pvr_bounces", 3)))
+	var source_energy := (
+		float(settings.get("bounce_scale", 1.0))
+		* float(settings.get("indirect_output_scale", 1.0))
+	)
+	lightmap.bounce_indirect_energy = clampf(source_energy, 0.0, 2.0)
+	if not is_equal_approx(source_energy, lightmap.bounce_indirect_energy):
+		_log_lighting_warning(
+			log_asset,
+			"Unity indirect-light energy " + str(source_energy)
+			+ " was clamped to Godot's supported range."
+		)
+	lightmap.directional = int(settings.get("lightmaps_bake_mode", 0)) != 0
+
+	var bake_resolution := float(settings.get("bake_resolution", 0.0))
+	if bake_resolution > 0.0:
+		var source_texel_scale := 1.0 / bake_resolution
+		lightmap.texel_scale = clampf(source_texel_scale, 0.01, 100.0)
+		if not is_equal_approx(source_texel_scale, lightmap.texel_scale):
+			_log_lighting_warning(
+				log_asset,
+				"Unity bake resolution " + str(bake_resolution)
+				+ " texels/unit exceeded Godot's texel-scale range."
+			)
+
+	var source_max_size := int(settings.get("lightmap_max_size", 0))
+	if source_max_size > 0:
+		lightmap.max_texture_size = clampi(source_max_size, 2048, 16384)
+		if source_max_size != lightmap.max_texture_size:
+			_log_lighting_warning(
+				log_asset,
+				"Unity lightmap size " + str(source_max_size)
+				+ " was clamped to Godot's supported range."
+			)
+
+
+func _log_lighting_warning(log_asset: Variant, message: String) -> void:
+	if log_asset != null:
+		log_asset.log_warn(message, "m_LightingSettings")
+
+
+func keeps_lighting_authoring_settings(settings: Dictionary) -> bool:
+	return (
+		bool(settings.get("enable_baked_lightmaps", false))
+		or bool(settings.get("enable_realtime_lightmaps", false))
+	)
 
 
 func get_global_transform(node: Node):
@@ -208,7 +427,23 @@ func pack_scene(pkgasset, is_prefab) -> PackedScene:
 				env.ambient_light_sky_contribution = 0
 		elif asset.type == "LightmapSettings":
 			var lda: Array = asset.keys.get("m_LightingDataAsset", [null, 0, null, null])
-			if lda[1] == 0:
+			var lighting_settings := get_lighting_settings(asset)
+			if bakedlm != null:
+				configure_lightmap_gi(bakedlm, lighting_settings, asset)
+			var has_baked_data := lda.size() >= 2 and int(lda[1]) != 0
+			var keeps_authoring_settings := keeps_lighting_authoring_settings(
+				lighting_settings
+			)
+			# A LightingSettings asset carries bake-authoring settings, not baked
+			# lightmap textures. Keep an unbaked LightmapGI when baked authoring
+			# is enabled so the scene can be rebaked in Godot. Also keep it for
+			# unsupported Unity realtime GI so that intent remains inspectable
+			# through node metadata and an explicit editor description.
+			if (
+				bakedlm != null
+				and not has_baked_data
+				and not keeps_authoring_settings
+			):
 				scene_contents.remove_child(bakedlm)
 				bakedlm = null
 		elif asset.type == "NavMeshSettings":
@@ -265,6 +500,8 @@ func pack_scene(pkgasset, is_prefab) -> PackedScene:
 	node_state.set_main_name_map(node_state.prefab_state.gameobject_name_map, node_state.prefab_state.prefab_gameobject_name_map)
 
 	arr.sort_custom(customComparison)
+	if not is_prefab:
+		arr = apply_scene_roots_order(pkgasset, arr)
 	for asset in arr:
 		if asset.is_stripped:
 			asset.log_fail("Stripped object " + asset.type + " added to arr " + str(asset.meta.guid) + "/" + str(asset.fileID))

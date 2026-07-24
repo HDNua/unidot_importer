@@ -21,21 +21,72 @@ class LogMessageHolder:
 	var all_logs: PackedStringArray = PackedStringArray()
 	var warnings_fails: PackedStringArray = PackedStringArray()
 	var fails: PackedStringArray = PackedStringArray()
+	var log_mutex := Mutex.new()
+
+	func clear() -> void:
+		log_mutex.lock()
+		all_logs.clear()
+		warnings_fails.clear()
+		fails.clear()
+		log_mutex.unlock()
+
+	func append_log(log_str: String) -> void:
+		log_mutex.lock()
+		all_logs.append(log_str)
+		log_mutex.unlock()
+
+	func append_debug(log_str: String, dropped_log_str: String, debug_log_limit: int) -> void:
+		log_mutex.lock()
+		var debug_log_count := len(all_logs) - len(warnings_fails)
+		if debug_log_count == debug_log_limit:
+			all_logs.append(dropped_log_str)
+		elif debug_log_count < debug_log_limit:
+			all_logs.append(log_str)
+		log_mutex.unlock()
+
+	func append_warning(log_str: String) -> void:
+		log_mutex.lock()
+		all_logs.append(log_str)
+		warnings_fails.append(log_str)
+		log_mutex.unlock()
+
+	func append_failure(log_str: String) -> void:
+		log_mutex.lock()
+		all_logs.append(log_str)
+		warnings_fails.append(log_str)
+		fails.append(log_str)
+		log_mutex.unlock()
+
+	func snapshot() -> Dictionary:
+		log_mutex.lock()
+		var result := {
+			"all_logs": all_logs.duplicate(),
+			"warnings_fails": warnings_fails.duplicate(),
+			"fails": fails.duplicate(),
+		}
+		log_mutex.unlock()
+		return result
 
 	func get_all_logs() -> String:
-		return "\n".join(all_logs)
+		return "\n".join(snapshot()["all_logs"])
 
 	func get_warnings_fails() -> String:
-		return "\n".join(warnings_fails)
+		return "\n".join(snapshot()["warnings_fails"])
 
 	func get_fail_logs() -> String:
-		return "\n".join(fails)
+		return "\n".join(snapshot()["fails"])
 
 	func has_warnings():
-		return not warnings_fails.is_empty()
+		log_mutex.lock()
+		var result := not warnings_fails.is_empty()
+		log_mutex.unlock()
+		return result
 
 	func has_fails():
-		return not fails.is_empty()
+		log_mutex.lock()
+		var result := not fails.is_empty()
+		log_mutex.unlock()
+		return result
 
 
 var object_adapter: RefCounted = object_adapter_class.new()
@@ -142,7 +193,10 @@ func set_log_database(log_database: Object):
 
 
 func clear_logs():
-	log_message_holder = LogMessageHolder.new()
+	if log_message_holder == null:
+		log_message_holder = LogMessageHolder.new()
+	else:
+		log_message_holder.clear()
 
 
 const ERROR_COLOR_TAG := "FAIL: "
@@ -157,14 +211,14 @@ func log_debug(fileid: int, msg: String):
 	var fileidstr = ""
 	if fileid != 0:
 		fileidstr = " @" + str(fileid)
-	var seq_str: String = "%08d " % log_database_holder.database.global_log_count
-	log_database_holder.database.global_log_count += 1
+	var seq_str: String = "%08d " % log_database_holder.database.allocate_log_sequence()
 	var log_str: String = seq_str + orig_path_short + ": " + msg + fileidstr
-	var len_diff = len(log_message_holder.all_logs) - len(log_message_holder.warnings_fails)
-	if len_diff == log_database_holder.database.log_limit_per_guid:
-		log_str = seq_str + "Dropping all future debug logs from this file!"
-	if len_diff <= log_database_holder.database.log_limit_per_guid:
-		log_message_holder.all_logs.append(log_str)
+	var dropped_log_str := seq_str + "Dropping all future debug logs from this file!"
+	log_message_holder.append_debug(
+		log_str,
+		dropped_log_str,
+		log_database_holder.database.log_limit_per_guid
+	)
 	log_database_holder.database.log_debug([null, fileid, self.guid, 0], msg)
 
 
@@ -184,11 +238,9 @@ func log_warn(fileid: int, msg: String, field: String = "", remote_ref: Array = 
 		fileidstr = " ref " + ref_guid_str + ":" + str(remote_ref[1])
 	if fileid != 0:
 		fileidstr += " @" + str(fileid)
-	var seq_str: String = "%08d " % log_database_holder.database.global_log_count
-	log_database_holder.database.global_log_count += 1
+	var seq_str: String = "%08d " % log_database_holder.database.allocate_log_sequence()
 	var log_str: String = seq_str + orig_path_short + ": " + WARNING_COLOR_TAG + fieldstr + msg + fileidstr
-	log_message_holder.all_logs.append(log_str)
-	log_message_holder.warnings_fails.append(log_str)
+	log_message_holder.append_warning(log_str)
 	var xref: Array = remote_ref
 	if len(xref) > 3 and xref[1] != 0 and (typeof(xref[2]) == TYPE_NIL or xref[2].is_empty()):
 		xref = [null, xref[1], self.guid, xref[3]]
@@ -211,12 +263,9 @@ func log_fail(fileid: int, msg: String, field: String = "", remote_ref: Array = 
 		fileidstr = " ref " + ref_guid_str + ":" + str(remote_ref[1])
 	if fileid != 0:
 		fileidstr += " @" + str(fileid)
-	var seq_str: String = "%08d " % log_database_holder.database.global_log_count
-	log_database_holder.database.global_log_count += 1
+	var seq_str: String = "%08d " % log_database_holder.database.allocate_log_sequence()
 	var log_str: String = seq_str + orig_path_short + ": " + ERROR_COLOR_TAG + fieldstr + msg + fileidstr
-	log_message_holder.all_logs.append(log_str)
-	log_message_holder.warnings_fails.append(log_str)
-	log_message_holder.fails.append(log_str)
+	log_message_holder.append_failure(log_str)
 	var xref: Array = remote_ref
 	if len(xref) > 3 and xref[1] != 0 and (typeof(xref[2]) == TYPE_NIL or xref[2].is_empty()):
 		xref = [null, xref[1], self.guid, xref[3]]

@@ -23,6 +23,7 @@ const anim_tree_runtime := preload("./runtime/anim_tree.gd")
 const human_trait = preload("./humanoid/human_trait.gd")
 const humanoid_transform_util = preload("./humanoid/transform_util.gd")
 const unidot_utils_class = preload("./unidot_utils.gd")
+const particle_system_converter_class = preload("./particle_system_converter.gd")
 
 var unidot_utils = unidot_utils_class.new()
 
@@ -4931,6 +4932,43 @@ class UnidotPrefabLegacyUnused:
 	pass
 
 
+class UnidotSceneRoots:
+	extends UnidotObject
+
+	var roots: Array:
+		get:
+			return keys.get("m_Roots", [])
+
+	func is_toplevel() -> bool:
+		return false
+
+
+class UnidotLightingSettings:
+	extends UnidotObject
+
+	const SETTINGS_META := &"unidot_lighting_settings"
+
+	func get_godot_extension() -> String:
+		return ".lighting.tres"
+
+	func create_godot_resource() -> Resource:
+		var settings := Resource.new()
+		settings.resource_name = get_name()
+		settings.set_meta(SETTINGS_META, {
+			"enable_baked_lightmaps": keys.get("m_EnableBakedLightmaps", 0) != 0,
+			"enable_realtime_lightmaps": keys.get("m_EnableRealtimeLightmaps", 0) != 0,
+			"bounce_scale": float(keys.get("m_BounceScale", 1.0)),
+			"indirect_output_scale": float(keys.get("m_IndirectOutputScale", 1.0)),
+			"lightmap_max_size": int(keys.get("m_LightmapMaxSize", 0)),
+			"bake_resolution": float(keys.get("m_BakeResolution", 0.0)),
+			"lightmaps_bake_mode": int(keys.get("m_LightmapsBakeMode", 0)),
+			"pvr_bounces": int(keys.get("m_PVRBounces", 3)),
+			"serialized_version": int(keys.get("serializedVersion", 0)),
+		})
+		assign_object_meta(settings)
+		return settings
+
+
 ### ================ COMPONENT TYPES ================
 class UnidotComponent:
 	extends UnidotObject
@@ -5346,10 +5384,21 @@ class UnidotMeshCollider:
 
 	func get_shape() -> Shape3D:
 		var source_mesh: Mesh
+		var mesh_ref: Array
 		if source_mesh_instance != null:
 			source_mesh = source_mesh_instance.mesh
+			mesh_ref = get_ref(keys, "m_Mesh")
 		else:
-			source_mesh = meta.get_godot_resource(get_mesh(keys))
+			mesh_ref = get_mesh(keys)
+			source_mesh = meta.get_godot_resource(mesh_ref)
+		if source_mesh == null:
+			log_fail(
+				"Unable to create MeshCollider shape because the source mesh "
+				+ "could not be resolved.",
+				"m_Mesh",
+				mesh_ref
+			)
+			return null
 		if convex:
 			return source_mesh.create_convex_shape()
 		else:
@@ -5624,6 +5673,130 @@ class UnidotRenderer:
 					outdict["_materials/" + str(idx)] = meta.get_godot_resource(m)
 			log_debug("Converted mesh prop " + str(outdict) + "  for uprop " + str(uprops))
 		return outdict
+
+
+class UnidotParticleSystem:
+	extends UnidotComponent
+
+	func get_godot_type() -> String:
+		return "GPUParticles3D"
+
+	func convert_properties(node: Node, uprops: Dictionary) -> Dictionary:
+		var particles := node as GPUParticles3D
+		var baseline := keys.duplicate(true)
+		if particles != null:
+			baseline = particle_system_converter_class.get_component_keys(particles, type, keys)
+		var merged_keys := particle_system_converter_class.merge_property_overrides(baseline, uprops)
+		return {"_unidot_particle_system_keys": merged_keys}
+
+	func apply_node_props(node: Node, props: Dictionary):
+		if node is GPUParticles3D:
+			particle_system_converter_class.apply_converted_properties(
+				node as GPUParticles3D,
+				props,
+				Callable(meta, "get_godot_resource"),
+				Callable(self, "log_warn")
+			)
+
+	func create_godot_node(state: RefCounted, new_parent: Node3D) -> Node:
+		var existing_path: NodePath = meta.fileid_to_nodepath.get(
+			fileID,
+			meta.prefab_fileid_to_nodepath.get(fileID, NodePath())
+		)
+		var existing := state.scene_contents.get_node_or_null(existing_path) as GPUParticles3D
+		if existing != null:
+			state.add_fileID(existing, self)
+			particle_system_converter_class.store_component_keys(
+				existing,
+				type,
+				keys,
+				meta.get_database().enable_unidot_keys
+			)
+			return null
+		var particles := GPUParticles3D.new()
+		particles.name = type
+		state.add_child(particles, new_parent, self)
+		particle_system_converter_class.store_component_keys(
+			particles,
+			type,
+			keys,
+			meta.get_database().enable_unidot_keys
+		)
+		if meta.get_database().enable_unidot_keys:
+			particles.editor_description = str(self)
+		return particles
+
+
+class UnidotParticleSystemRenderer:
+	extends UnidotRenderer
+
+	func get_godot_type() -> String:
+		return "GPUParticles3D"
+
+	func convert_properties(node: Node, uprops: Dictionary) -> Dictionary:
+		var particles := node as GPUParticles3D
+		var baseline := keys.duplicate(true)
+		if particles != null:
+			baseline = particle_system_converter_class.get_component_keys(particles, type, keys)
+		var merged_keys := particle_system_converter_class.merge_property_overrides(baseline, uprops)
+		return {"_unidot_particle_renderer_keys": merged_keys}
+
+	func apply_node_props(node: Node, props: Dictionary):
+		if node is GPUParticles3D:
+			particle_system_converter_class.apply_converted_properties(
+				node as GPUParticles3D,
+				props,
+				Callable(meta, "get_godot_resource"),
+				Callable(self, "log_warn")
+			)
+
+	func create_godot_node(state: RefCounted, new_parent: Node3D) -> Node:
+		var particle_system: UnidotParticleSystem = gameObject.GetComponent("ParticleSystem")
+		if particle_system == null:
+			log_fail("ParticleSystemRenderer has no ParticleSystem on its GameObject.")
+			return null
+		var particle_path: NodePath = meta.fileid_to_nodepath.get(
+			particle_system.fileID,
+			meta.prefab_fileid_to_nodepath.get(particle_system.fileID, NodePath())
+		)
+		var particles := state.scene_contents.get_node_or_null(particle_path) as GPUParticles3D
+		var created_shared_node := false
+		if particles == null:
+			particles = GPUParticles3D.new()
+			particles.name = particle_system.type
+			state.add_child(particles, new_parent, particle_system)
+			particle_system_converter_class.store_component_keys(
+				particles,
+				particle_system.type,
+				particle_system.keys,
+				meta.get_database().enable_unidot_keys
+			)
+			particle_system_converter_class.configure_system(
+				particles,
+				particle_system.keys,
+				Callable(particle_system, "log_warn")
+			)
+			created_shared_node = true
+		state.add_fileID(particles, self)
+		particle_system_converter_class.store_component_keys(
+			particles,
+			type,
+			keys,
+			meta.get_database().enable_unidot_keys
+		)
+		if created_shared_node:
+			# The GameObject component loop configures this renderer and applies
+			# transform correction exactly once to the newly-created shared node.
+			return particles
+		particle_system_converter_class.configure_renderer(
+			particles,
+			keys,
+			Callable(meta, "get_godot_resource"),
+			Callable(self, "log_warn")
+		)
+		# The ParticleSystem already returned this shared node to the GameObject
+		# loop. Returning null prevents transform correction from applying twice.
+		return null
 
 
 class UnidotMeshRenderer:
@@ -6997,6 +7170,15 @@ class UnidotPrefabImporter:
 		return 100100000  # Always should be this ID.
 
 
+class UnidotScriptedImporter:
+	extends UnidotAssetImporter
+
+	func get_main_object_id() -> int:
+		# Unity custom importers do not expose a universal main object fileID.
+		# Extension-specific handlers may still preserve or translate the source.
+		return 0
+
+
 class UnidotTextScriptImporter:
 	extends UnidotAssetImporter
 
@@ -7185,6 +7367,7 @@ var _type_dictionary: Dictionary = {
 	"Light": UnidotLight,
 	# "LightingDataAsset": UnidotLightingDataAsset,
 	# "LightingDataAssetParent": UnidotLightingDataAssetParent,
+	"LightingSettings": UnidotLightingSettings,
 	# "LightmapParameters": UnidotLightmapParameters,
 	"LightmapSettings": DiscardUnidotComponent,
 	"LightProbeGroup": UnidotLightProbeGroup,
@@ -7228,9 +7411,9 @@ var _type_dictionary: Dictionary = {
 	# "PackageManifestImporter": UnidotPackageManifestImporter,
 	# "PackedAssets": UnidotPackedAssets,
 	# "ParentConstraint": UnidotParentConstraint,
-	# "ParticleSystem": UnidotParticleSystem,
+	"ParticleSystem": UnidotParticleSystem,
 	# "ParticleSystemForceField": UnidotParticleSystemForceField,
-	# "ParticleSystemRenderer": UnidotParticleSystemRenderer,
+	"ParticleSystemRenderer": UnidotParticleSystemRenderer,
 	"PhysicMaterial": UnidotPhysicMaterial,
 	# "Physics2DSettings": UnidotPhysics2DSettings,
 	# "PhysicsManager": UnidotPhysicsManager,
@@ -7274,8 +7457,12 @@ var _type_dictionary: Dictionary = {
 	# "SampleClip": UnidotSampleClip,
 	# "ScaleConstraint": UnidotScaleConstraint,
 	# "SceneAsset": UnidotSceneAsset,
+	"SceneRoots": UnidotSceneRoots,
 	# "SceneVisibilityState": UnidotSceneVisibilityState,
-	# "ScriptedImporter": UnidotScriptedImporter,
+	# Custom importer semantics are extension-specific. Register the metadata
+	# type so source-only handlers can preserve known formats without a red
+	# fallback failure.
+	"ScriptedImporter": UnidotScriptedImporter,
 	# "ScriptMapper": UnidotScriptMapper,
 	# "SerializableManagedHost": UnidotSerializableManagedHost,
 	# "Shader": UnidotShader,
@@ -7618,6 +7805,7 @@ var utype_to_classname = {
 	687078895: "SpriteAtlas",
 	747330370: "RayTracingShaderImporter",
 	825902497: "RayTracingShader",
+	850595691: "LightingSettings",
 	877146078: "PlatformModuleSetup",
 	895512359: "AimConstraint",
 	937362698: "VFXManager",
@@ -7637,6 +7825,7 @@ var utype_to_classname = {
 	1403656975: "StreamingManager",
 	1480428607: "LowerResBlitTexture",
 	1542919678: "StreamingController",
+	1660057539: "SceneRoots",
 	1742807556: "GridLayout",
 	1766753193: "AssemblyDefinitionImporter",
 	1773428102: "ParentConstraint",

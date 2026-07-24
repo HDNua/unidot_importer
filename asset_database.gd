@@ -13,6 +13,7 @@ const ASSET_DATABASE_PATH: String = "res://unidot_asset_database.res"
 var object_adapter = object_adapter_class.new()
 var in_package_import: bool = false
 var log_message_holder = asset_meta_class.LogMessageHolder.new()
+var log_mutex := Mutex.new()
 
 # User Preferences:
 @export var use_text_resources: bool = false
@@ -69,15 +70,24 @@ const ERROR_COLOR_TAG := "FAIL: "
 const WARNING_COLOR_TAG := "warn: "
 
 func clear_logs():
-	log_message_holder = asset_meta_class.LogMessageHolder.new()
+	log_mutex.lock()
+	log_message_holder.clear()
+	log_mutex.unlock()
+
+
+func allocate_log_sequence() -> int:
+	log_mutex.lock()
+	var sequence := global_log_count
+	global_log_count += 1
+	log_mutex.unlock()
+	return sequence
 
 # Log messages related to this asset
 func log_debug(local_ref: Array, msg: String):
 	if len(local_ref) < 4 or local_ref[2] == "":
-		var seq_str: String = "%08d " % global_log_count
-		global_log_count += 1
+		var seq_str: String = "%08d " % allocate_log_sequence()
 		var log_str: String = seq_str + "GLOBAL: " + msg
-		log_message_holder.all_logs.append(log_str)
+		log_message_holder.append_log(log_str)
 	if ENABLE_CONSOLE_DEBUGGING:
 		print(".unidot. " + str(local_ref[2]) + ":" + str(local_ref[1]) + " : " + msg)
 
@@ -89,10 +99,9 @@ func log_warn(local_ref: Array, msg: String, field: String = "", remote_ref: Arr
 		var fieldstr: String = ""
 		if not field.is_empty():
 			fieldstr = "." + field + ": "
-		var seq_str: String = "%08d " % global_log_count
-		global_log_count += 1
+		var seq_str: String = "%08d " % allocate_log_sequence()
 		var log_str: String = seq_str + "GLOBAL: " + WARNING_COLOR_TAG + fieldstr + msg
-		log_message_holder.all_logs.append(log_str)
+		log_message_holder.append_warning(log_str)
 	if ENABLE_CONSOLE_DEBUGGING:
 		var fieldstr = ""
 		if not field.is_empty():
@@ -109,10 +118,9 @@ func log_fail(local_ref: Array, msg: String, field: String = "", remote_ref: Arr
 		var fieldstr: String = ""
 		if not field.is_empty():
 			fieldstr = "." + field + ": "
-		var seq_str: String = "%08d " % global_log_count
-		global_log_count += 1
+		var seq_str: String = "%08d " % allocate_log_sequence()
 		var log_str: String = seq_str + "GLOBAL: " + ERROR_COLOR_TAG + fieldstr + msg
-		log_message_holder.all_logs.append(log_str)
+		log_message_holder.append_failure(log_str)
 	if ENABLE_CONSOLE_DEBUGGING:
 		var fieldstr = ""
 		if not field.is_empty():

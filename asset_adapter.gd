@@ -644,7 +644,7 @@ class BaseModelHandler:
 		cfile.set_value_compare("params", "animation/import", importer.animation_import)
 		# Humanoid animations in particular are sensititve to immutable tracks being shared across rigs.
 		cfile.set_value_compare("params", "animation/remove_immutable_tracks", (importer.keys.get("animationType", 2) == 3 or pkgasset.parsed_meta.is_force_humanoid()))
-		cfile.set_value_compare("params", "animation/import_rest_as_RESET", true)
+		cfile.set_value_compare("params", "animation/import_rest_as_RESET", importer.animation_import)
 
 		# FIXME: Godot has a major bug if light baking is used:
 		# it leaves a file ".glb.unwrap_cache" open and causes future imports to fail.
@@ -2500,6 +2500,23 @@ class TextHandler:
 		return false # Tells package dialog that this resource cannot be loaded so it shouldn't show an error
 
 
+class UnsupportedSourceHandler:
+	extends TextHandler
+	var source_kind: String = "source asset"
+
+	func create_with_kind(kind: String) -> UnsupportedSourceHandler:
+		source_kind = kind
+		return self
+
+	func write_and_preprocess_asset(pkgasset: Object, tmpdir: String, thread_subdir: String) -> String:
+		pkgasset.log_warn(
+			"Preserving unsupported Unity " + source_kind + " as source-only: "
+			+ pkgasset.orig_pathname
+			+ ". Semantic conversion is not implemented."
+		)
+		return super.write_and_preprocess_asset(pkgasset, tmpdir, thread_subdir)
+
+
 class DisabledHandler:
 	extends AssetHandler
 
@@ -2519,6 +2536,8 @@ class DisabledHandler:
 func get_class_name(obj):
 	if obj is DisabledHandler:
 		return "DisabledHandler"
+	if obj is UnsupportedSourceHandler:
+		return "UnsupportedSourceHandler"
 	if obj is FbxHandler:
 		return "FbxHandler"
 	if obj is BaseModelHandler:
@@ -2581,6 +2600,9 @@ var file_handlers: Dictionary = {
 	"overridecontroller": YamlHandler.new(),  # Animator Override Controller
 	"controller": YamlHandler.new(),  # Animator Controller
 	"anim": YamlHandler.new(),  # Animation... # TODO: This should be by type (.asset), not extension
+	"lighting": YamlHandler.new(),  # LightingSettings YAML; semantic conversion is handled separately.
+	"shadergraph": UnsupportedSourceHandler.new().create_with_kind("Shader Graph"),
+	"shadersubgraph": UnsupportedSourceHandler.new().create_with_kind("Shader Sub Graph"),
 	# ALSO: animations can be contained inside other assets, such as controllers. we need to recognize this and extract them.
 	"default": DefaultHandler.new(),
 	"txt": TextHandler.new(),

@@ -216,16 +216,17 @@ class ParseState:
 	func fold_root_transforms_into_only_child() -> bool:
 		# FIXME: Animations targeting the parent or the child might need to be adjusted.
 		var root_node: Node3D = toplevel_node
-		var is_foldable: bool = root_node.get_child_count() == 1
-		var wanted_child: int = 0
-		if root_node.get_child_count() == 2 and root_node.get_child(0) is AnimationPlayer:
-			wanted_child = 1
-			is_foldable = true
-		elif root_node.get_child_count() == 2 and root_node.get_child(1) is AnimationPlayer:
-			is_foldable = true
-		if not is_foldable:
+		var structural_children: Array[Node] = []
+		for child: Node in root_node.get_children():
+			# Godot may expose more than one AnimationPlayer while reimporting an
+			# FBX, even though only one remains in the saved scene. These are
+			# component helpers, not Unity hierarchy nodes.
+			if child is AnimationPlayer:
+				continue
+			structural_children.append(child)
+		if structural_children.size() != 1:
 			return false
-		var child_node = root_node.get_child(wanted_child)
+		var child_node: Node = structural_children[0]
 		if child_node is Skeleton3D:
 			if len(child_node.get_parentless_bones()) > 1:
 				return false

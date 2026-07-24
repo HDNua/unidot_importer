@@ -254,20 +254,23 @@ func update_progress_bar(amt: int):
 	progress_bar.value += amt
 
 func update_global_logs():
-	if len(asset_database.log_message_holder.all_logs) == global_logs_last_count:
+	var global_log_snapshot: Dictionary = asset_database.log_message_holder.snapshot()
+	var global_all_logs: PackedStringArray = global_log_snapshot["all_logs"]
+	var global_fail_logs: PackedStringArray = global_log_snapshot["fails"]
+	if len(global_all_logs) == global_logs_last_count:
 		return
-	global_logs_last_count = len(asset_database.log_message_holder.all_logs)
+	global_logs_last_count = len(global_all_logs)
 	var filtered_msgs: PackedStringArray
 	var col: int = -1
 	if global_logs_tree_item.is_checked(2):
 		col = 2
-		filtered_msgs = asset_database.log_message_holder.all_logs
+		filtered_msgs = global_all_logs
 	elif global_logs_tree_item.is_checked(3):
 		col = 3
-		filtered_msgs = asset_database.log_message_holder.all_logs
+		filtered_msgs = global_all_logs
 	elif global_logs_tree_item.is_checked(4):
 		col = 4
-		filtered_msgs = asset_database.log_message_holder.fails
+		filtered_msgs = global_fail_logs
 	if col > 0:
 		var data: Variant = global_logs_tree_item.get_metadata(col)
 		var current_scroll: int = 0
@@ -457,21 +460,23 @@ func log_column_checked(ti: TreeItem, col: int, is_checked: bool, update_textbox
 				if tw != null:
 					if not filtered_msgs.is_empty():
 						needs_sort = true
+					var holder_snapshot: Dictionary = tw.parsed_meta.log_message_holder.snapshot()
 					if col == 2:
-						filtered_msgs.append_array(tw.parsed_meta.log_message_holder.all_logs)
+						filtered_msgs.append_array(holder_snapshot["all_logs"])
 					elif col == 3:
-						filtered_msgs.append_array(tw.parsed_meta.log_message_holder.warnings_fails)
+						filtered_msgs.append_array(holder_snapshot["warnings_fails"])
 					elif col == 4:
-						filtered_msgs.append_array(tw.parsed_meta.log_message_holder.fails)
+						filtered_msgs.append_array(holder_snapshot["fails"])
 			if ti == global_logs_tree_item:
 				if not filtered_msgs.is_empty():
 					needs_sort = true
+				var global_log_snapshot: Dictionary = asset_database.log_message_holder.snapshot()
 				if col == 2:
-					filtered_msgs.append_array(asset_database.log_message_holder.all_logs)
+					filtered_msgs.append_array(global_log_snapshot["all_logs"])
 				elif col == 3:
-					filtered_msgs.append_array(asset_database.log_message_holder.all_logs)
+					filtered_msgs.append_array(global_log_snapshot["all_logs"])
 				elif col == 4:
-					filtered_msgs.append_array(asset_database.log_message_holder.fails)
+					filtered_msgs.append_array(global_log_snapshot["fails"])
 			if needs_sort:
 				filtered_msgs.sort()
 			ti.set_metadata(col, filtered_msgs)
@@ -1433,6 +1438,9 @@ func update_task_color(tw: RefCounted):
 		ti.set_custom_color(0, Color("#ddffbb"))
 	else:
 		var holder: asset_meta_class.LogMessageHolder = tw.asset.parsed_meta.log_message_holder
+		var holder_snapshot: Dictionary = holder.snapshot()
+		var holder_warnings_fails: PackedStringArray = holder_snapshot["warnings_fails"]
+		var holder_fails: PackedStringArray = holder_snapshot["fails"]
 		if tw.did_fail:
 			asset_database.log_fail([null, 0, "", 0], "Pkgasset " + str(tw.asset.pathname) + " guid " + str(tw.asset.guid) + " parsed meta but did_fail=" + str(tw.did_fail) + " is_loaded=" + str(tw.is_loaded))
 			ti.set_icon(0, status_error_icon)
@@ -1441,11 +1449,11 @@ func update_task_color(tw: RefCounted):
 			asset_database.log_fail([null, 0, "", 0], "Pkgasset " + str(tw.asset.pathname) + " guid " + str(tw.asset.guid) + " could not be loaded.")
 			ti.set_icon(0, status_error_icon)
 			ti.set_custom_color(0, Color("#ff4422"))
-		elif holder.has_fails():
+		elif not holder_fails.is_empty():
 			ti.set_icon(0, status_warning_icon)
 			ti.set_custom_color(0, Color("#ff8822"))
 			ti.set_text(0, tw.asset.parsed_meta.path.get_file())
-		elif holder.has_warnings():
+		elif not holder_warnings_fails.is_empty():
 			ti.set_icon(0, status_success_icon)
 			ti.set_custom_color(0, Color("#ccff22"))
 			ti.set_text(0, tw.asset.parsed_meta.path.get_file())
@@ -1454,9 +1462,9 @@ func update_task_color(tw: RefCounted):
 			ti.set_custom_color(0, Color("#22ff44"))
 			ti.set_text(0, tw.asset.parsed_meta.path.get_file())
 		if holder != null:
-			var num_fails = len(holder.fails)
+			var num_fails = len(holder_fails)
 			var delta_num_fails = num_fails - ("0" + ti.get_text(4)).to_int()
-			var num_warnings = len(holder.warnings_fails) - num_fails
+			var num_warnings = len(holder_warnings_fails) - num_fails
 			var delta_num_warnings = num_warnings - ("0" + ti.get_text(3)).to_int()
 			while ti != null:
 				if num_fails > 0:
