@@ -124,7 +124,21 @@ func _init() -> void:
 			"length": 1.5,
 			"radius": {"value": 0.75},
 		},
-		"ColorModule": {"enabled": 0},
+		"ColorModule": {
+			"enabled": 1,
+			"gradient": {
+				"maxGradient": {
+					"m_NumColorKeys": 2,
+					"m_NumAlphaKeys": 2,
+					"key0": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 0.25},
+					"key1": {"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0},
+					"ctime0": 0,
+					"ctime1": 65535,
+					"atime0": 0,
+					"atime1": 65535,
+				},
+			},
+		},
 		"SizeModule": {"enabled": 0},
 		"NoiseModule": {"enabled": 1},
 	}
@@ -147,6 +161,14 @@ func _init() -> void:
 	assert(is_equal_approx(process.initial_velocity_min, 1.0))
 	assert(is_equal_approx(process.initial_velocity_max, 3.0))
 	assert(process.emission_shape == ParticleProcessMaterial.EMISSION_SHAPE_RING)
+	assert(process.color_ramp is GradientTexture1D)
+	var color_gradient := (process.color_ramp as GradientTexture1D).gradient
+	assert(color_gradient != null)
+	assert(color_gradient.get_point_count() == 2)
+	assert(is_equal_approx(color_gradient.get_offset(0), 0.0))
+	assert(is_equal_approx(color_gradient.get_offset(1), 1.0))
+	assert(is_equal_approx(color_gradient.get_color(0).a, 0.25))
+	assert(is_equal_approx(color_gradient.get_color(1).a, 1.0))
 
 	var expected_transform := Transform3D(Basis.from_euler(Vector3(0.1, 0.2, 0.3)), Vector3(1.0, 2.0, 3.0))
 	particles.transform = expected_transform
@@ -188,6 +210,23 @@ func _init() -> void:
 	assert(override_draw_material != null)
 	assert(override_draw_material != override_material)
 	assert(override_draw_material.vertex_color_use_as_albedo)
+
+	var sphere_shell_props: Dictionary = particle_system.convert_properties(particles, {
+		"ShapeModule.type": 1,
+	})
+	particle_system.apply_node_props(particles, sphere_shell_props)
+	process = particles.process_material as ParticleProcessMaterial
+	assert(process.emission_shape == ParticleProcessMaterial.EMISSION_SHAPE_SPHERE)
+	assert(meta.warnings.any(func(message: String): return "Sphere-shell" in message))
+	assert(process.color_ramp is GradientTexture1D)
+
+	var restore_cone_props: Dictionary = particle_system.convert_properties(particles, {
+		"ShapeModule.type": 4,
+	})
+	particle_system.apply_node_props(particles, restore_cone_props)
+	process = particles.process_material as ParticleProcessMaterial
+	assert(process.emission_shape == ParticleProcessMaterial.EMISSION_SHAPE_RING)
+	assert(process.color_ramp is GradientTexture1D)
 
 	var disable_emission_props: Dictionary = particle_system.convert_properties(particles, {
 		"EmissionModule.enabled": 0,

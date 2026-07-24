@@ -231,7 +231,8 @@ static func _configure_shape(process: ParticleProcessMaterial, shape: Dictionary
 		0, 1, 2, 3:
 			process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 			process.emission_sphere_radius = maxf(0.0, radius)
-			process.emission_sphere_surface_only = shape_type == 1 or shape_type == 3
+			if shape_type == 1 or shape_type == 3:
+				_warn(warn, "Sphere-shell particle shape is approximated as a filled sphere.")
 			if shape_type == 2 or shape_type == 3:
 				_warn(warn, "Hemisphere particle shape is approximated as a sphere.")
 		4, 7, 8, 9:
@@ -353,16 +354,23 @@ static func _gradient_texture(gradient_data: Variant) -> GradientTexture1D:
 			offsets.append(alpha_offset)
 	offsets.sort()
 
-	var gradient := Gradient.new()
-	gradient.remove_point(1)
-	gradient.remove_point(0)
+	var packed_offsets := PackedFloat32Array()
+	var packed_colors := PackedColorArray()
 	for offset in offsets:
 		var rgb := _sample_gradient_color(data, color_count, offset)
 		rgb.a = _sample_gradient_alpha(data, alpha_count, offset)
-		gradient.add_point(offset, rgb)
-	if gradient.get_point_count() == 1:
-		gradient.add_point(1.0, gradient.get_color(0))
+		packed_offsets.append(offset)
+		packed_colors.append(rgb)
+	if packed_offsets.size() == 1:
+		packed_offsets.append(1.0 if packed_offsets[0] < 1.0 else 0.0)
+		packed_colors.append(packed_colors[0])
+		if packed_offsets[0] > packed_offsets[1]:
+			packed_offsets.reverse()
+			packed_colors.reverse()
 
+	var gradient := Gradient.new()
+	gradient.offsets = packed_offsets
+	gradient.colors = packed_colors
 	var texture := GradientTexture1D.new()
 	texture.gradient = gradient
 	return texture
