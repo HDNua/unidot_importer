@@ -179,7 +179,16 @@ Special Thanks to
 
 ## HDNua update
 
-### Godot 4.7.1 and Synty POLYGON Prototype validation
+### Asset support matrix
+
+| Publisher | Package | Tested with | Support | Details |
+| --- | --- | --- | :---: | --- |
+| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prototype scenes instantiate, and mesh/material/collision bindings plus representative albedo paths validate. Known failures remain for prefab material overrides, ParticleSystem components, ShaderGraph/SubGraph assets, and LightingSettings. |
+
+`△ Partial` means the package has a validated usable subset, but the import is
+not lossless and still requires review or manual porting for the listed gaps.
+
+### Synty POLYGON Prototype validation details
 
 The HDNua fork has been tested with the Synty **POLYGON - Prototype Pack**
 `.unitypackage` on Godot `4.7.1-stable.mono` for macOS. The validated
@@ -195,13 +204,29 @@ Validated results with importer revision
 - All `13` expected representative albedo texture mappings matched.
 - The POLYGON Prototype validation found `0` missing mesh, material, or
   collision-shape bindings.
-- All generated Synty scenes from the package loaded successfully (`989/989`,
-  including POLYGON Generic and POLYGON Prototype content).
+- All `989` generated Synty `.tscn` resources from the package loaded and
+  instantiated, including POLYGON Generic and POLYGON Prototype content. This
+  is a structural load gate, not a semantic-parity or lossless-conversion claim.
 
 The material mapping update recognizes underscored Unity texture properties
 such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map`, while
 preventing mask, normal, metallic, roughness, and emission textures from being
 selected as generic albedo fallbacks.
+
+### Known import failures
+
+The `△ Partial` status is intentional. The validated output contains `26`
+`.failed_import` files: `25` Unity ShaderGraph/SubGraph assets and `1`
+LightingSettings asset. Additional red `FAIL` diagnostics remain for some
+prefab material-override node paths, ParticleSystem/ParticleSystemRenderer
+components, and Unity scene-root objects.
+
+The red error counter in the Unidot log is a count of diagnostic messages, not
+a count of unique failed files or failed scenes. A scene can load successfully
+while an unsupported component or override inside it was skipped. In
+particular, the deeper albedo and missing-binding checks above are scoped to the
+`498` POLYGON Prototype prefabs and scenes; the `989/989` check only establishes
+that every generated scene resource can be loaded and instantiated.
 
 This is a compatibility result for this package and configuration, not a claim
 that every Synty package or every Unity feature is fully supported. Custom
