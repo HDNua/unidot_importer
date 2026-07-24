@@ -183,7 +183,7 @@ Special Thanks to
 
 | Publisher | Package | Tested with | Support | Details |
 | --- | --- | --- | :---: | --- |
-| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prototype scenes instantiate, and mesh/material/collision bindings plus representative albedo paths validate. Known failures remain for prefab material overrides, ParticleSystem components, ShaderGraph/SubGraph assets, and LightingSettings. |
+| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prefabs and scenes instantiate with validated mesh, material, collision, albedo, scene-root, lighting-authoring, and basic particle conversion. ShaderGraph semantics, advanced particle modules, realtime GI, and source-missing collider references still require review. |
 
 `△ Partial` means the package has a validated usable subset, but the import is
 not lossless and still requires review or manual porting for the listed gaps.
@@ -196,7 +196,7 @@ configuration used the native Godot FBX importer, imported into
 `res://Unidot`, and saved translated resources and scenes as text.
 
 Validated results with importer revision
-`5b88bb63796771d873c4c21b0db99bc4a7c3cf68`:
+`56199efef9dc8661c946ab564fb3d4bf28e1f913`:
 
 - `2,291` package assets selected and `5,944` output files generated.
 - All `496` POLYGON Prototype prefabs and `2` regular scenes loaded and
@@ -207,30 +207,51 @@ Validated results with importer revision
 - All `989` generated Synty `.tscn` resources from the package loaded and
   instantiated, including POLYGON Generic and POLYGON Prototype content. This
   is a structural load gate, not a semantic-parity or lossless-conversion claim.
+- All `30` Unity ParticleSystem/ParticleSystemRenderer pairs generated
+  `GPUParticles3D` nodes. The common Initial, Emission, Shape, Color, Size,
+  billboard, stretched-billboard, and mesh-renderer subset is converted;
+  enabled unsupported modules produce explicit warnings.
+- Unity `SceneRoots` restored the authored root order in the demo scene.
+- The package LightingSettings asset generated a Godot resource, and the demo
+  `LightmapGI` preserved the mapped authoring values (`2` bounces, directional
+  mode, `0.025` texel scale, and `2048` maximum texture size). Unity realtime-GI
+  intent is metadata-only because Godot `LightmapGI` has no equivalent realtime
+  conversion.
+- All `25` ShaderGraph/SubGraph files were preserved as source-only files and
+  no `.failed_import` files were generated. Their shader semantics were not
+  translated.
+- Unidot emitted `13` red diagnostics, all for POLYGON Generic MeshColliders
+  whose referenced source mesh GUID/fileID is absent from the package. These
+  are reported as structured source-data failures instead of null-mesh script
+  errors.
 
 The material mapping update recognizes underscored Unity texture properties
 such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map`, while
 preventing mask, normal, metallic, roughness, and emission textures from being
 selected as generic albedo fallbacks.
 
-### Known import failures
+### Known limitations
 
-The `△ Partial` status is intentional. The validated output contains `26`
-`.failed_import` files: `25` Unity ShaderGraph/SubGraph assets and `1`
-LightingSettings asset. Additional red `FAIL` diagnostics remain for some
-prefab material-override node paths, ParticleSystem/ParticleSystemRenderer
-components, and Unity scene-root objects.
+The `△ Partial` status is intentional. ShaderGraph/SubGraph files are preserved
+for manual porting, not converted to Godot shaders. ParticleSystem conversion
+covers the common deterministic subset; modules such as Rotation, Noise,
+Velocity, ClampVelocity, UV animation, Collision, bursts, and some shape or
+billboard modes are omitted or approximated with explicit warnings. Unity
+realtime GI is also not converted to a Godot realtime-GI system.
 
 The red error counter in the Unidot log is a count of diagnostic messages, not
 a count of unique failed files or failed scenes. A scene can load successfully
 while an unsupported component or override inside it was skipped. In
 particular, the deeper albedo and missing-binding checks above are scoped to the
 `498` POLYGON Prototype prefabs and scenes; the `989/989` check only establishes
-that every generated scene resource can be loaded and instantiated.
+that every generated scene resource can be loaded and instantiated. In this
+validation run, the remaining `13` red diagnostics are the source-missing
+POLYGON Generic collider references described above.
 
 This is a compatibility result for this package and configuration, not a claim
 that every Synty package or every Unity feature is fully supported. Custom
-ShaderGraph/SubGraph content, MonoBehaviours, ParticleSystems, and source assets
-with missing external references may still require manual work.
+ShaderGraph/SubGraph content, MonoBehaviours, advanced ParticleSystems,
+realtime GI, and source assets with missing external references may still
+require manual work.
 
 ![Synty POLYGON Prototype demo imported with Unidot in Godot 4.7.1](./hdnua_synty_polygon_prototype_godot_4_7_1.png)
