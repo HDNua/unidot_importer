@@ -196,12 +196,14 @@ configuration used the native Godot FBX importer, imported into
 `res://Unidot`, and saved translated resources and scenes as text.
 
 Validated results with importer revision
-`56199efef9dc8661c946ab564fb3d4bf28e1f913`:
+`d2209b8e5fecd1c77e8732a898447e612fb2f55e`:
 
+- The public synthetic regression suite passed (`11/11`), including dedicated
+  warning-severity and repeated missing-MeshCollider lookup coverage.
 - `2,291` package assets selected and `5,944` output files generated.
 - All `496` POLYGON Prototype prefabs and `2` regular scenes loaded and
   instantiated (`498/498`).
-- All `13` expected representative albedo texture mappings matched.
+- All `13` expected representative albedo texture mappings matched (`13/13`).
 - The POLYGON Prototype validation found `0` missing mesh, material, or
   collision-shape bindings.
 - All `989` generated Synty `.tscn` resources from the package loaded and
@@ -220,10 +222,20 @@ Validated results with importer revision
 - All `25` ShaderGraph/SubGraph files were preserved as source-only files and
   no `.failed_import` files were generated. Their shader semantics were not
   translated.
-- Unidot emitted `13` red diagnostics, all for POLYGON Generic MeshColliders
-  whose referenced source mesh GUID/fileID is absent from the package. These
-  are reported as structured source-data failures instead of null-mesh script
-  errors.
+- This full-import run observed warning diagnostics decrease from `667` to
+  `140`, while failure diagnostics remained at `13`.
+- Targeted non-actionable warning noise was `0`: disabled-animation
+  `AnimationClip` fallback IDs and identity Humanoid rotations are retained only
+  in verbose diagnostics, while repeated missing-MeshCollider lookups no longer
+  emit duplicate generic no-meta warnings.
+- The remaining `140` warnings are actionable or explicitly lossy diagnostics:
+  `106` particle conversion warnings, `19` source-only ShaderGraph warnings,
+  `9` stripped-object warnings, `4` lighting warnings, and `2` material
+  no-meta warnings.
+- The `13` red diagnostics are all for POLYGON Generic MeshColliders whose
+  referenced source mesh GUID/fileID is absent from the package. Each missing
+  reference is reported once as a structured source-data failure instead of a
+  null-mesh script error.
 
 The material mapping update recognizes underscored Unity texture properties
 such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map`, while
