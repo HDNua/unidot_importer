@@ -792,6 +792,73 @@ class UnidotMaterial:
 		var col: Color = colorProperties.get(name, dfl)
 		return Plane(Vector3(col.r, col.g, col.b), col.a)
 
+	func normalize_material_property_name(name: String) -> String:
+		return name.to_lower().replace("_", "").replace("-", "").replace(" ", "")
+
+	func get_property_names_by_alias(
+		properties: Dictionary,
+		aliases: Array[String]
+	) -> Array[String]:
+		var ret: Array[String] = []
+		var property_names: Array = properties.keys()
+		property_names.sort()
+		for alias in aliases:
+			if properties.has(alias) and not ret.has(alias):
+				ret.append(alias)
+			var normalized_alias := normalize_material_property_name(alias)
+			for property_name_variant in property_names:
+				var property_name := str(property_name_variant)
+				if (
+					normalize_material_property_name(property_name) == normalized_alias
+					and not ret.has(property_name)
+				):
+					ret.append(property_name)
+		return ret
+
+	func get_color_by_alias(
+		colorProperties: Dictionary,
+		aliases: Array[String],
+		dfl: Color
+	) -> Color:
+		var property_names := get_property_names_by_alias(colorProperties, aliases)
+		if property_names.is_empty():
+			return dfl
+		return get_color(colorProperties, property_names[0], dfl)
+
+	func get_texture_by_alias(
+		texProperties: Dictionary,
+		aliases: Array[String]
+	) -> Array:
+		for property_name in get_property_names_by_alias(texProperties, aliases):
+			var texture := get_texture(texProperties, property_name)
+			if texture != null:
+				return [texture, property_name]
+		return [null, ""]
+
+	func is_safe_albedo_fallback(name: String) -> bool:
+		var normalized_name := normalize_material_property_name(name)
+		for non_albedo_term in [
+			"normal",
+			"bump",
+			"mask",
+			"metal",
+			"rough",
+			"smooth",
+			"occlusion",
+			"height",
+			"parallax",
+			"emission",
+			"specular",
+			"detail",
+		]:
+			if normalized_name.contains(non_albedo_term):
+				return false
+		return (
+			not normalized_name.ends_with("map")
+			or normalized_name.ends_with("colormap")
+			or normalized_name.ends_with("basemap")
+		)
+
 	func get_keywords() -> Dictionary:
 		var ret: Dictionary = {}.duplicate()
 		var kwd = keys.get("m_ShaderKeywords", "")
@@ -825,29 +892,41 @@ class UnidotMaterial:
 		# FIXME: Kinda hacky since transparent stuff doesn't always draw depth in Unidot
 		# But it seems to workaround a problem with some materials for now.
 		ret.depth_draw_mode = true  ##### BaseMaterial3D.DEPTH_DRAW_ALWAYS
-		ret.albedo_color = get_color(colorProperties, "_Color", Color.WHITE)
-		var albedo_textures_to_try = ["_MainTex", "_Tex", "_Albedo", "_Diffuse", "_BaseColor", "_BaseColorMap"]
-		for name in texProperties:
-			if albedo_textures_to_try.has(name):
-				continue
-			if not name.ends_with("Map"):
-				albedo_textures_to_try.append(name)
-		# Pick a random non-null texture property as albedo. Prefer texture slots not ending with "Map"
-		for name in texProperties:
-			if name == "_BumpMap" or name == "_OcclusionMap" or name == "_MetallicGlossMap" or name == "_ParallaxMap":
-				continue
-			if name.ends_with("ColorMap") or name.ends_with("BaseMap"):
-				albedo_textures_to_try.append(name)
+		ret.albedo_color = get_color_by_alias(
+			colorProperties,
+			["_Color", "_BaseColor"],
+			Color.WHITE
+		)
+		var albedo_textures_to_try := get_property_names_by_alias(
+			texProperties,
+			[
+				"_MainTex",
+				"_Tex",
+				"_Albedo",
+				"_AlbedoMap",
+				"_Diffuse",
+				"_DiffuseMap",
+				"_BaseColor",
+				"_BaseColorMap",
+				"_BaseMap",
+			]
+		)
+		var fallback_names: Array = texProperties.keys()
+		fallback_names.sort()
+		for fallback_name_variant in fallback_names:
+			var fallback_name := str(fallback_name_variant)
+			if (
+				not albedo_textures_to_try.has(fallback_name)
+				and is_safe_albedo_fallback(fallback_name)
+			):
+				albedo_textures_to_try.append(fallback_name)
 		for name in albedo_textures_to_try:
-			var env = texProperties.get(name, {})
-			var texref: Array = env.get("m_Texture", [null, 0, "", 0])
-			if not texref.is_empty():
-				ret.albedo_texture = meta.get_godot_resource(texref)
-				if ret.albedo_texture != null:
-					log_debug("Trying to get albedo from " + str(name) + ": " + str(ret.albedo_texture))
-					ret.uv1_scale = get_texture_scale(texProperties, name)
-					ret.uv1_offset = get_texture_offset(texProperties, name)
-					break
+			ret.albedo_texture = get_texture(texProperties, name)
+			if ret.albedo_texture != null:
+				log_debug("Trying to get albedo from " + str(name) + ": " + str(ret.albedo_texture))
+				ret.uv1_scale = get_texture_scale(texProperties, name)
+				ret.uv1_offset = get_texture_offset(texProperties, name)
+				break
 
 		if ret.albedo_texture == null:
 			ret.uv1_scale = get_texture_scale(texProperties, "_MainTex")
@@ -855,19 +934,34 @@ class UnidotMaterial:
 
 		# TODO: ORM not yet implemented.
 		if true: # kws.get("_NORMALMAP", false):
-			ret.normal_texture = get_texture(texProperties, "_BumpMap")
+			var normal_texture_and_name := get_texture_by_alias(
+				texProperties,
+				["_BumpMap", "_NormalMap"]
+			)
+			ret.normal_texture = normal_texture_and_name[0]
 			ret.normal_scale = get_float(floatProperties, "_BumpScale", 1.0)
 			if ret.normal_texture != null:
 				ret.normal_enabled = true
 		if kws.get("_EMISSION", false):
-			var emis_vec: Plane = get_vector_from_color(colorProperties, "_EmissionColor", Color.BLACK)
+			var emission_color := get_color_by_alias(
+				colorProperties,
+				["_EmissionColor"],
+				Color.BLACK
+			)
+			var emis_vec := Plane(
+				Vector3(emission_color.r, emission_color.g, emission_color.b),
+				emission_color.a
+			)
 			var emis_mag = max(emis_vec.x, max(emis_vec.y, emis_vec.z))
 			ret.emission = Color.BLACK
 			if emis_mag > 0.01:
 				ret.emission_enabled = true
 				ret.emission = Color(emis_vec.x / emis_mag, emis_vec.y / emis_mag, emis_vec.z / emis_mag).linear_to_srgb()
 				ret.emission_energy_multiplier = emis_mag
-				ret.emission_texture = get_texture(texProperties, "_EmissionMap")
+				ret.emission_texture = get_texture_by_alias(
+					texProperties,
+					["_EmissionMap"]
+				)[0]
 				if ret.emission_texture != null:
 					ret.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
 		if true: # kws.get("_PARALLAXMAP", false):
