@@ -145,8 +145,30 @@ class ParseState:
 			objtype_to_next_id[type] = next_obj_id + 2
 			used_ids[next_obj_id] = true
 			if type != "Material":
-				metaobj.log_warn(next_obj_id, "Generating id " + str(next_obj_id) + " for " + str(name) + " type " + str(type))
+				var message := (
+					"Generating id " + str(next_obj_id) + " for "
+					+ str(name) + " type " + str(type)
+				)
+				if (
+					type == "AnimationClip"
+					and metaobj.importer != null
+					and not metaobj.importer.animation_import
+				):
+					# Godot may expose a default Take even when Unity disabled
+					# animation import. The deterministic fallback ID is expected
+					# in that case and is only useful in verbose diagnostics.
+					metaobj.log_debug(next_obj_id, message)
+				else:
+					metaobj.log_warn(next_obj_id, message)
 			return next_obj_id
+
+	func log_humanoid_rotation(node_name: String, rotation: Quaternion) -> void:
+		var message := "Humanoid Node " + node_name + ": " + str(rotation)
+		if rotation.is_equal_approx(Quaternion.IDENTITY):
+			# An identity correction is the normal no-op case.
+			metaobj.log_debug(0, message)
+		else:
+			metaobj.log_warn(0, message)
 
 	func get_orig_name(obj_gltf_type: String, p_obj_name: String) -> String:
 		var obj_name = p_obj_name
@@ -464,7 +486,12 @@ class ParseState:
 		if node is Node3D and node != scene:
 			# The only known case of non-Node3D is AnimationPlayer
 			if humanoid_original_transforms.has(node.name):
-				metaobj.log_warn(0, "Humanoid Node " + str(node.name) + ": " + str(humanoid_original_transforms.get(node.name).basis.get_rotation_quaternion()))
+				log_humanoid_rotation(
+					str(node.name),
+					humanoid_original_transforms.get(
+						node.name
+					).basis.get_rotation_quaternion()
+				)
 				p_pre_retarget_global_rest *= Transform3D(humanoid_original_transforms.get(node.name).basis, p_pre_retarget_global_rest.basis.inverse() * p_global_rest.basis * node.transform.origin)
 			else:
 				p_pre_retarget_global_rest *= node.transform

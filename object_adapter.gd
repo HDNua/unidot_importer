@@ -5376,11 +5376,34 @@ class UnidotMeshCollider:
 	extends UnidotCollider
 
 	var source_mesh_instance: MeshInstance3D # Used only for component added to instanced prefab.
+	var missing_mesh_refs_reported: Dictionary = {}
 
 	# Not making these animatable?
 	var convex: bool:
 		get:
 			return keys.get("m_Convex", 0) != 0
+
+	func report_missing_mesh_once(mesh_ref: Array) -> void:
+		# Instanced prefab overrides can provide a MeshInstance3D whose mesh is
+		# null without carrying a serialized Unity reference.
+		var ref_key := str(mesh_ref)
+		if missing_mesh_refs_reported.has(ref_key):
+			return
+		missing_mesh_refs_reported[ref_key] = true
+		log_fail(
+			"Unable to create MeshCollider shape because the source mesh "
+			+ "could not be resolved.",
+			"m_Mesh",
+			mesh_ref
+		)
+
+	func resolve_mesh_for_collider(mesh_ref: Array) -> Mesh:
+		# MeshCollider reports one structured failure itself. Suppress the
+		# generic no-meta warning emitted by each repeated lookup.
+		var source_mesh: Mesh = meta.get_godot_resource(mesh_ref, true)
+		if source_mesh == null:
+			report_missing_mesh_once(mesh_ref)
+		return source_mesh
 
 	func get_shape() -> Shape3D:
 		var source_mesh: Mesh
@@ -5390,14 +5413,9 @@ class UnidotMeshCollider:
 			mesh_ref = get_ref(keys, "m_Mesh")
 		else:
 			mesh_ref = get_mesh(keys)
-			source_mesh = meta.get_godot_resource(mesh_ref)
+			source_mesh = resolve_mesh_for_collider(mesh_ref)
 		if source_mesh == null:
-			log_fail(
-				"Unable to create MeshCollider shape because the source mesh "
-				+ "could not be resolved.",
-				"m_Mesh",
-				mesh_ref
-			)
+			report_missing_mesh_once(mesh_ref)
 			return null
 		if convex:
 			return source_mesh.create_convex_shape()
@@ -5421,9 +5439,9 @@ class UnidotMeshCollider:
 						log_warn("Oh no i am stripped MeshCollider")
 					var mf: RefCounted = gameObject.get_meshFilter()
 					if mf != null:
-						new_mesh = meta.get_godot_resource(mf.mesh)
+						new_mesh = resolve_mesh_for_collider(mf.mesh)
 				else:
-					new_mesh = meta.get_godot_resource(mesh_ref)
+					new_mesh = resolve_mesh_for_collider(mesh_ref)
 				if new_mesh != null:
 					if new_convex:
 						outdict["shape"] = new_mesh.create_convex_shape()
