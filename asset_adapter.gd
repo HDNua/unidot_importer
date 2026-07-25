@@ -1747,6 +1747,44 @@ class FbxHandler:
 				anim.position_track_insert_key(trk, 0.0, node.position)
 		return anim
 
+	# Some Unity avatars ship structurally broken humanDescription data (for example
+	# Synty POLYGON FPS hands map Hips to the rig root, shifting the whole spine
+	# chain). Unity ignores the avatar for scene display so this goes unnoticed
+	# there, but trusting it for retargeting scrambles the skeleton. Returns ""
+	# when consistent, or a human-readable reason when the mapping violates the
+	# humanoid profile hierarchy.
+	static func humanoid_bone_map_validation_error(bone_map_dict: Dictionary, parent_by_bone_name: Dictionary) -> String:
+		var profile := SkeletonProfileHumanoid.new()
+		var profile_parent: Dictionary = {}
+		for i in range(profile.bone_size):
+			profile_parent[String(profile.get_bone_name(i))] = String(profile.get_bone_parent(i))
+		var mapped_profile: Dictionary = {}
+		for bone in bone_map_dict:
+			mapped_profile[bone_map_dict[bone]] = bone
+		if not mapped_profile.has("Hips"):
+			return "no skeleton bone is mapped to Hips"
+		for bone in bone_map_dict:
+			var profile_name: String = bone_map_dict[bone]
+			if profile_name == "Root" or not profile_parent.has(profile_name):
+				continue
+			# Find the nearest ancestor in the skeleton that is also mapped.
+			var cur: String = parent_by_bone_name.get(bone, "")
+			while cur != "" and not bone_map_dict.has(cur):
+				cur = parent_by_bone_name.get(cur, "")
+			if cur == "":
+				continue
+			var ancestor_profile: String = bone_map_dict[cur]
+			var p: String = profile_parent.get(profile_name, "")
+			var found := false
+			while p != "":
+				if p == ancestor_profile:
+					found = true
+					break
+				p = profile_parent.get(p, "")
+			if not found:
+				return ("skeleton bone '%s' is mapped to '%s' but its nearest mapped ancestor '%s' is mapped to '%s', which is not an ancestor of '%s' in the humanoid profile" % [bone, profile_name, cur, ancestor_profile, profile_name])
+		return ""
+
 	func preprocess_asset_ufbx(pkgasset: Object, tmpdir: String, thread_subdir: String, path: String, data_buf: PackedByteArray, extra_data: Dictionary = {}) -> String:
 		# I think we should depend on relative paths for this, for example make dummy textures to get it to generate the materials, then move them back.
 		# We can do the FBXDocument step in preprocess, so we will know in advance if this works.
@@ -1896,7 +1934,17 @@ class FbxHandler:
 					pkgasset.log_debug("Copying from avatar " + str(src_ava_meta.path) + " " + str(src_ava_meta.guid) + " orig transforms " + str(len(src_ava_meta.internal_data.get("humanoid_original_transforms", {}))))
 					copy_avatar = true
 
-			if not copy_avatar and len(importer.keys.get("humanDescription", {}).get("human", [])) < 10:
+			var human_map_error: String = ""
+			if not copy_avatar and len(importer.keys.get("humanDescription", {}).get("human", [])) >= 10:
+				var parent_by_bone_name: Dictionary = {}
+				for node in nodes:
+					if node.parent != -1:
+						parent_by_bone_name[node.resource_name] = nodes[node.parent].resource_name
+				var tentative_map: Dictionary = object_adapter_class.UnidotModelImporter.generate_bone_map_dict_no_root(importer, importer.keys.get("humanDescription", {}).get("human", []), "humanName", "boneName")
+				human_map_error = humanoid_bone_map_validation_error(tentative_map, parent_by_bone_name)
+				if not human_map_error.is_empty():
+					pkgasset.log_warn("humanDescription avatar bone map is structurally inconsistent: " + human_map_error + ". Falling back to automatic humanoid bone mapping.")
+			if not copy_avatar and (len(importer.keys.get("humanDescription", {}).get("human", [])) < 10 or not human_map_error.is_empty()):
 				var skel: Skeleton3D = Skeleton3D.new()
 				for node in nodes:
 					var node_name = node.resource_name
@@ -2235,7 +2283,20 @@ class FbxHandler:
 					pkgasset.log_debug("Copying from avatar " + str(src_ava_meta.path) + " " + str(src_ava_meta.guid) + " orig transforms " + str(len(src_ava_meta.internal_data.get("humanoid_original_transforms", {}))))
 					copy_avatar = true
 
-			if not copy_avatar and len(importer.keys.get("humanDescription", {}).get("human", [])) < 10:
+			var human_map_error: String = ""
+			if not copy_avatar and len(importer.keys.get("humanDescription", {}).get("human", [])) >= 10:
+				var parent_by_bone_name: Dictionary = {}
+				for x_node_idx in range(len(json["nodes"])):
+					for chld in json["nodes"][x_node_idx].get("children", []):
+						parent_by_bone_name[sanitize_bone_name(json["nodes"][int(chld)].get("name", ""))] = sanitize_bone_name(json["nodes"][x_node_idx].get("name", ""))
+				var raw_map: Dictionary = object_adapter_class.UnidotModelImporter.generate_bone_map_dict_no_root(importer, importer.keys.get("humanDescription", {}).get("human", []), "humanName", "boneName")
+				var tentative_map: Dictionary = {}
+				for bone_key in raw_map:
+					tentative_map[sanitize_bone_name(bone_key)] = raw_map[bone_key]
+				human_map_error = humanoid_bone_map_validation_error(tentative_map, parent_by_bone_name)
+				if not human_map_error.is_empty():
+					pkgasset.log_warn("humanDescription avatar bone map is structurally inconsistent: " + human_map_error + ". Falling back to automatic humanoid bone mapping.")
+			if not copy_avatar and (len(importer.keys.get("humanDescription", {}).get("human", [])) < 10 or not human_map_error.is_empty()):
 				var skel: Skeleton3D = Skeleton3D.new()
 				for node in json["nodes"]:
 					var node_name = node.get("name", "")

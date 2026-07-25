@@ -7140,7 +7140,14 @@ class UnidotModelImporter:
 		var bone_map_dict: Dictionary = generate_bone_map_dict_no_root(self, humanDescription["human"], "humanName", "boneName")
 
 		if not meta.internal_data.get("humanoid_root_bone", "").is_empty():
-			bone_map_dict[meta.internal_data.get("humanoid_root_bone", "")] = "Root"
+			var root_bone: String = meta.internal_data.get("humanoid_root_bone", "")
+			var existing_mapping: String = bone_map_dict.get(root_bone, "")
+			if existing_mapping.is_empty() or existing_mapping == "Root":
+				bone_map_dict[root_bone] = "Root"
+			else:
+				# A broken humanDescription (e.g. Hips mapped to the rig root)
+				# would otherwise be silently stripped of that profile bone here.
+				log_warn("humanoid_root_bone " + root_bone + " is already mapped to profile bone " + existing_mapping + "; not overriding with Root")
 		meta.humanoid_bone_map_dict = bone_map_dict
 		return bone_map_dict
 
