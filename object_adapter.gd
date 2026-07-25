@@ -4170,6 +4170,7 @@ class UnidotGameObject:
 			state.add_child(ret, new_parent, transform)
 		for ext in extra_fileID:
 			state.add_fileID(ret, ext)
+		self.configure_node(ret)
 		var skip_first: bool = true
 		var orig_meta_owner: Node = state.owner
 		if sub_avatar_meta != null:
@@ -4293,10 +4294,37 @@ class UnidotGameObject:
 	func convert_properties(node: Node, uprops: Dictionary) -> Dictionary:
 		var outdict = convert_properties_component(node, uprops)
 		if uprops.has("m_IsActive"):
-			outdict["visible"] = uprops.get("m_IsActive")
+			outdict["visible"] = uprops.get("m_IsActive") != 0
 		if uprops.has("m_Name"):
 			outdict["name"] = uprops.get("m_Name")
 		return outdict
+
+	func is_active_in_hierarchy() -> bool:
+		var current_game_object: UnidotGameObject = self
+		var visited_instance_ids: Dictionary = {}
+		while current_game_object != null:
+			var instance_id := current_game_object.get_instance_id()
+			if visited_instance_ids.has(instance_id):
+				current_game_object.log_warn(
+					"Detected a cycle while resolving GameObject active state.",
+					"m_IsActive"
+				)
+				return false
+			visited_instance_ids[instance_id] = true
+			if not current_game_object.enabled:
+				return false
+
+			var current_transform: Variant = current_game_object.get_transform()
+			if not (current_transform is UnidotTransform):
+				break
+			var parent_transform: Variant = current_transform.parent
+			if not (parent_transform is UnidotTransform):
+				break
+			var parent_game_object: Variant = parent_transform.gameObject
+			if not (parent_game_object is UnidotGameObject):
+				break
+			current_game_object = parent_game_object
+		return true
 
 	var meshFilter: UnidotMeshFilter = null
 
@@ -5922,6 +5950,12 @@ class UnidotSkinnedMeshRenderer:
 		# ret.skeleton = NodePath("..") # default?
 		# TODO: skin??
 		ret.skin = edit_skin(component_name, get_skin(), gdskel)
+		var source_game_object: UnidotGameObject = gameObject
+		ret.visible = (
+			self.enabled
+			and source_game_object != null
+			and source_game_object.is_active_in_hierarchy()
+		)
 		# TODO: duplicate skin and assign the correct bone names to match self.bones array
 		ret.lod_bias = 128 # Disable builtin LODs on skinned meshes due to multiple bugs.
 		return ret
