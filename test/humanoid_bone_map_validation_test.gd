@@ -101,6 +101,26 @@ func _initialize() -> void:
 		_fail("Sparse consistent bone map was rejected: " + err)
 		return
 
+	# 5. Native ufbx reports the exact imported resource names separately from
+	# Unity's source names. Validation must use that remap, including Godot's
+	# duplicate-name suffixes, rather than approximating it with string replaces.
+	var raw_namespaced_shifted_map: Dictionary = {}
+	var skeleton_to_source_name: Dictionary = {}
+	for skeleton_name in shifted_map:
+		var source_name: String = "source/" + String(skeleton_name)
+		raw_namespaced_shifted_map[source_name] = shifted_map[skeleton_name]
+		skeleton_to_source_name[skeleton_name] = source_name
+	raw_namespaced_shifted_map["Digit_01 1"] = "RightThumbMetacarpal"
+	skeleton_to_source_name["Digit_01_2"] = "Digit_01 1"
+	var normalized_map := ASSET_ADAPTER.FbxHandler.bone_map_in_skeleton_name_domain(raw_namespaced_shifted_map, skeleton_to_source_name)
+	if normalized_map.get("Digit_01_2", "") != "RightThumbMetacarpal" or normalized_map.has("Digit_01 1"):
+		_fail("Native duplicate bone name was not mapped into the imported skeleton namespace.")
+		return
+	err = ASSET_ADAPTER.FbxHandler.humanoid_bone_map_validation_error(normalized_map, RIG_PARENTS)
+	if err.is_empty():
+		_fail("Root-shifted map hidden behind native imported names was not rejected.")
+		return
+
 	print("UNIDOT_HUMANOID_BONE_MAP_VALIDATION_TEST_PASS")
 	quit(0)
 

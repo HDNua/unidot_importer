@@ -1548,7 +1548,7 @@ class FbxHandler:
 			out_map[parent_node_name] = this_children
 		return out_map
 
-	func sanitize_bone_name(bone_name: String) -> String:
+	static func sanitize_bone_name(bone_name: String) -> String:
 		var xret = bone_name.replace(":", "").replace("/", "")
 		return xret
 
@@ -1785,6 +1785,20 @@ class FbxHandler:
 				return ("skeleton bone '%s' is mapped to '%s' but its nearest mapped ancestor '%s' is mapped to '%s', which is not an ancestor of '%s' in the humanoid profile" % [bone, profile_name, cur, ancestor_profile, profile_name])
 		return ""
 
+	# Converts a source-name bone map into the exact name domain used by the
+	# imported skeleton. The remap is target name -> unique source name, so invert
+	# it instead of approximating Godot's collision handling with string replaces.
+	static func bone_map_in_skeleton_name_domain(source_bone_map: Dictionary, skeleton_to_source_name: Dictionary) -> Dictionary:
+		var source_to_skeleton_name: Dictionary = {}
+		for skeleton_name in skeleton_to_source_name:
+			var source_name: String = skeleton_to_source_name[skeleton_name]
+			source_to_skeleton_name[source_name] = skeleton_name
+		var result: Dictionary = {}
+		for source_name in source_bone_map:
+			var skeleton_name: String = source_to_skeleton_name.get(source_name, source_name)
+			result[skeleton_name] = source_bone_map[source_name]
+		return result
+
 	# Walks up from an arbitrary mapped bone to the top of the skeleton, adding
 	# ancestors to the human skin set, and returns the bone name that should be
 	# mapped to the humanoid profile's "Root" ("" for none). Only unmapped
@@ -1815,6 +1829,35 @@ class FbxHandler:
 			else:
 				# A mapped bone above the candidate means the candidate sits inside the
 				# humanoid rig; clear any interior candidate found so far.
+				root_bone_name = ""
+			if not human_skin_set.has(new_root_idx):
+				human_skin_nodes.push_back(new_root_idx)
+				human_skin_set[new_root_idx] = true
+			cur_human_node_idx = new_root_idx
+		return root_bone_name
+
+	# FBX2glTF JSON nodes retain source punctuation while the bone map uses
+	# sanitize_bone_name(). Keep the complete Root walk in that same key domain.
+	static func discover_humanoid_root_bone_from_json(nodes: Array, node_parents: Dictionary, bone_map_dict: Dictionary, human_skin_nodes: Array, human_skin_set: Dictionary, internal_data: Dictionary, log_debug: Callable) -> String:
+		var root_bone_name: String = ""
+		for key in bone_map_dict:
+			if bone_map_dict[key] == "Root":
+				root_bone_name = key
+		if human_skin_nodes.is_empty():
+			log_debug.call("cur_human_node_idx=-1 / no mapped humanoid bones")
+			return root_bone_name
+		var cur_human_node_idx: int = human_skin_nodes[-1]
+		log_debug.call("cur_human_node_idx=" + str(cur_human_node_idx) + " / " + str(nodes[cur_human_node_idx]))
+		while node_parents.has(cur_human_node_idx):
+			var new_root_idx: int = node_parents[cur_human_node_idx]
+			var node: Dictionary = nodes[new_root_idx]
+			var node_bone_name: String = sanitize_bone_name(String(node.get("name", "")))
+			log_debug.call("Adding node to skin " + str(new_root_idx) + " parent of " + str(cur_human_node_idx))
+			internal_data["humanoid_root_bone"] = node_bone_name
+			if not bone_map_dict.has(node_bone_name):
+				root_bone_name = node_bone_name
+			else:
+				# A mapped bone above the candidate means the candidate is inside the rig.
 				root_bone_name = ""
 			if not human_skin_set.has(new_root_idx):
 				human_skin_nodes.push_back(new_root_idx)
@@ -1977,7 +2020,8 @@ class FbxHandler:
 				for node in nodes:
 					if node.parent != -1:
 						parent_by_bone_name[node.resource_name] = nodes[node.parent].resource_name
-				var tentative_map: Dictionary = object_adapter_class.UnidotModelImporter.generate_bone_map_dict_no_root(importer, importer.keys.get("humanDescription", {}).get("human", []), "humanName", "boneName")
+				var raw_map: Dictionary = object_adapter_class.UnidotModelImporter.generate_bone_map_dict_no_root(importer, importer.keys.get("humanDescription", {}).get("human", []), "humanName", "boneName")
+				var tentative_map: Dictionary = bone_map_in_skeleton_name_domain(raw_map, godot_sanitized_to_orig_remap["bone_name"])
 				human_map_error = humanoid_bone_map_validation_error(tentative_map, parent_by_bone_name)
 				if not human_map_error.is_empty():
 					pkgasset.log_warn("humanDescription avatar bone map is structurally inconsistent: " + human_map_error + ". Falling back to automatic humanoid bone mapping.")
@@ -2365,29 +2409,7 @@ class FbxHandler:
 					human_skin_set[node_idx] = true
 				node_idx += 1
 
-			var root_bone_name: String = ""
-			for key in bone_map_dict:
-				if bone_map_dict[key] == "Root":
-					root_bone_name = key
-			var cur_human_node_idx: int = -1 if human_skin_nodes.is_empty() else human_skin_nodes[-1] # Doesn't matter which...just need to find a common ancestor.
-			pkgasset.log_debug("cur_human_node_idx=" + str(cur_human_node_idx) + " / " + str(json["nodes"][cur_human_node_idx]))
-			# Add up to three levels up into the skeleton. Our goal is to make the toplevel Armature node be a skeleton, so that we are guaranteed a root bone.
-			while node_parents.has(cur_human_node_idx):
-				var new_root_idx = node_parents[cur_human_node_idx]
-				var node = json["nodes"][new_root_idx]
-				pkgasset.log_debug("Adding node to skin " + str(new_root_idx) + " parent of " + str(cur_human_node_idx))
-				pkgasset.parsed_meta.internal_data["humanoid_root_bone"] = node["name"]
-				if not bone_map_dict.has(node["name"]):
-					root_bone_name = node["name"]
-				else:
-					# A mapped bone above the candidate means the candidate sits inside the
-					# humanoid rig (e.g. an unmapped clavicle between chest and shoulder).
-					# Only bones above every mapped bone may become Root.
-					root_bone_name = ""
-				if not human_skin_set.has(new_root_idx):
-					human_skin_nodes.push_back(new_root_idx)
-					human_skin_set[new_root_idx] = true
-				cur_human_node_idx = new_root_idx
+			var root_bone_name: String = discover_humanoid_root_bone_from_json(json["nodes"], node_parents, bone_map_dict, human_skin_nodes, human_skin_set, pkgasset.parsed_meta.internal_data, pkgasset.log_debug)
 			if root_bone_name != "":
 				bone_map_dict[root_bone_name] = "Root"
 

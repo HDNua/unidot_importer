@@ -53,18 +53,18 @@ func _initialize() -> void:
 
 	# The CRC32 keys must correspond to the original Unity names, because
 	# prefab GameObjects carry those names.
-	var crc_unity_right := avatar.crc32.crc32("Digit_01 1")
+	var crc_unity_right: int = avatar.crc32.crc32("Digit_01 1")
 	if not avatar.humanoid_bone_map_dict.has(crc_unity_right):
 		_fail("Unity-deduplicated name 'Digit_01 1' not found in humanoid bone map.")
 		return
 	if avatar.humanoid_bone_map_dict[crc_unity_right] != "RightThumbMetacarpal":
 		_fail("'Digit_01 1' mapped to '" + str(avatar.humanoid_bone_map_dict[crc_unity_right]) + "', expected RightThumbMetacarpal.")
 		return
-	var crc_left := avatar.crc32.crc32("Digit_01")
+	var crc_left: int = avatar.crc32.crc32("Digit_01")
 	if avatar.humanoid_bone_map_dict.get(crc_left, "") != "LeftThumbMetacarpal":
 		_fail("Non-duplicated name 'Digit_01' lost its mapping.")
 		return
-	var crc_plain := avatar.crc32.crc32("Palm_R")
+	var crc_plain: int = avatar.crc32.crc32("Palm_R")
 	if avatar.humanoid_bone_map_dict.get(crc_plain, "") != "RightHand":
 		_fail("Name without remap entry 'Palm_R' lost its mapping.")
 		return

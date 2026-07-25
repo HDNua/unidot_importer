@@ -35,6 +35,21 @@ func _run_walk(nodes: Array, bone_map_dict: Dictionary) -> String:
 	return ASSET_ADAPTER.FbxHandler.discover_humanoid_root_bone(nodes, bone_map_dict, human_skin_nodes, human_skin_set, internal_data, func(_msg): pass)
 
 
+func _run_json_walk(nodes: Array, bone_map_dict: Dictionary) -> String:
+	var node_parents: Dictionary = {}
+	var human_skin_nodes: Array = []
+	var human_skin_set: Dictionary = {}
+	for node_idx in range(len(nodes)):
+		for child_idx in nodes[node_idx].get("children", []):
+			node_parents[int(child_idx)] = node_idx
+		var node_bone_name := ASSET_ADAPTER.FbxHandler.sanitize_bone_name(String(nodes[node_idx].get("name", "")))
+		if bone_map_dict.has(node_bone_name):
+			human_skin_nodes.push_back(node_idx)
+			human_skin_set[node_idx] = true
+	var internal_data: Dictionary = {}
+	return ASSET_ADAPTER.FbxHandler.discover_humanoid_root_bone_from_json(nodes, node_parents, bone_map_dict, human_skin_nodes, human_skin_set, internal_data, func(_msg): pass)
+
+
 func _initialize() -> void:
 	# Rig 1: unmapped clavicle between mapped chest and shoulder; rig root is
 	# already mapped to Root. Walking up from the last mapped bone (the right
@@ -99,6 +114,34 @@ func _initialize() -> void:
 	var root3 := _run_walk(rig3, map3)
 	if root3 != "Armature":
 		_fail("Expected Armature as Root with interior hole present (got '" + root3 + "').")
+		return
+
+	# External FBX2glTF JSON keeps ':' and '/' while its bone map removes them.
+	# A mapped namespaced ancestor must still clear an interior Root candidate.
+	var json_rig1: Array = [
+		{"name": "mixamorig:Hips", "children": [1]},
+		{"name": "Clavicle:R", "children": [2]},
+		{"name": "Palm:R", "children": []},
+	]
+	var json_map1 := {
+		"mixamorigHips": "Hips",
+		"PalmR": "RightHand",
+	}
+	var json_root1 := _run_json_walk(json_rig1, json_map1)
+	if not json_root1.is_empty():
+		_fail("Namespaced mapped ancestor was mistaken for Root (got '" + json_root1 + "').")
+		return
+
+	# An actually unmapped node above that rig remains a valid Root candidate,
+	# and its returned name stays in the sanitized bone-map namespace.
+	var json_rig2: Array = [
+		{"name": "Armature/Root", "children": [1]},
+		{"name": "mixamorig:Hips", "children": [2]},
+		{"name": "Palm:R", "children": []},
+	]
+	var json_root2 := _run_json_walk(json_rig2, json_map1)
+	if json_root2 != "ArmatureRoot":
+		_fail("Expected sanitized above-rig Root 'ArmatureRoot' (got '" + json_root2 + "').")
 		return
 
 	print("humanoid_root_discovery_test: all cases passed")
