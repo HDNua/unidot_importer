@@ -1785,6 +1785,43 @@ class FbxHandler:
 				return ("skeleton bone '%s' is mapped to '%s' but its nearest mapped ancestor '%s' is mapped to '%s', which is not an ancestor of '%s' in the humanoid profile" % [bone, profile_name, cur, ancestor_profile, profile_name])
 		return ""
 
+	# Walks up from an arbitrary mapped bone to the top of the skeleton, adding
+	# ancestors to the human skin set, and returns the bone name that should be
+	# mapped to the humanoid profile's "Root" ("" for none). Only unmapped
+	# ancestors that sit above every mapped bone qualify (e.g. an Armature node):
+	# an unmapped bone with a mapped ancestor above it (e.g. a clavicle the
+	# auto-mapper skipped) is interior to the rig and must not be hijacked as
+	# Root, or its original orientation is lost and every bone below it converts
+	# with a corrupted rotation delta.
+	# `nodes` is an array of GLTFNode; mutates human_skin_nodes/human_skin_set/internal_data.
+	static func discover_humanoid_root_bone(nodes: Array, bone_map_dict: Dictionary, human_skin_nodes: Array, human_skin_set: Dictionary, internal_data: Dictionary, log_debug: Callable) -> String:
+		var root_bone_name: String = ""
+		for key in bone_map_dict:
+			if bone_map_dict[key] == "Root":
+				root_bone_name = key
+		var cur_human_node_idx: int = -1 if human_skin_nodes.is_empty() else human_skin_nodes[-1] # Doesn't matter which...just need to find a common ancestor.
+		log_debug.call("cur_human_node_idx=" + str(cur_human_node_idx) + " / " + str(nodes[cur_human_node_idx]))
+		# Add up to three levels up into the skeleton. Our goal is to make the toplevel Armature node be a skeleton, so that we are guaranteed a root bone.
+		while nodes[cur_human_node_idx].parent != -1:
+			var new_root_idx = nodes[cur_human_node_idx].parent
+			var node = nodes[new_root_idx]
+			if node.original_name.is_empty() or node.skeleton < 0:
+				break
+			log_debug.call("Adding node to skin " + str(new_root_idx) + " parent of " + str(cur_human_node_idx))
+			internal_data["humanoid_root_bone"] = node.resource_name
+			log_debug.call("Attempt root bone name: " + str(node.resource_name) + " in map: " + str(bone_map_dict.has(node.resource_name)))
+			if not bone_map_dict.has(node.resource_name):
+				root_bone_name = node.resource_name
+			else:
+				# A mapped bone above the candidate means the candidate sits inside the
+				# humanoid rig; clear any interior candidate found so far.
+				root_bone_name = ""
+			if not human_skin_set.has(new_root_idx):
+				human_skin_nodes.push_back(new_root_idx)
+				human_skin_set[new_root_idx] = true
+			cur_human_node_idx = new_root_idx
+		return root_bone_name
+
 	func preprocess_asset_ufbx(pkgasset: Object, tmpdir: String, thread_subdir: String, path: String, data_buf: PackedByteArray, extra_data: Dictionary = {}) -> String:
 		# I think we should depend on relative paths for this, for example make dummy textures to get it to generate the materials, then move them back.
 		# We can do the FBXDocument step in preprocess, so we will know in advance if this works.
@@ -1997,27 +2034,7 @@ class FbxHandler:
 					human_skin_set[node_idx] = true
 				node_idx += 1
 
-			var root_bone_name: String = ""
-			for key in bone_map_dict:
-				if bone_map_dict[key] == "Root":
-					root_bone_name = key
-			var cur_human_node_idx: int = -1 if human_skin_nodes.is_empty() else human_skin_nodes[-1] # Doesn't matter which...just need to find a common ancestor.
-			pkgasset.log_debug("cur_human_node_idx=" + str(cur_human_node_idx) + " / " + str(nodes[cur_human_node_idx]))
-			# Add up to three levels up into the skeleton. Our goal is to make the toplevel Armature node be a skeleton, so that we are guaranteed a root bone.
-			while nodes[cur_human_node_idx].parent != -1:
-				var new_root_idx = nodes[cur_human_node_idx].parent
-				var node = nodes[new_root_idx]
-				if node.original_name.is_empty() or node.skeleton < 0:
-					break
-				pkgasset.log_debug("Adding node to skin " + str(new_root_idx) + " parent of " + str(cur_human_node_idx))
-				pkgasset.parsed_meta.internal_data["humanoid_root_bone"] = node.resource_name
-				pkgasset.log_debug("Attempt root bone name: " + str(node.resource_name) + " in map: " + str(bone_map_dict.has(node.resource_name)))
-				if not bone_map_dict.has(node.resource_name):
-					root_bone_name = node.resource_name
-				if not human_skin_set.has(new_root_idx):
-					human_skin_nodes.push_back(new_root_idx)
-					human_skin_set[new_root_idx] = true
-				cur_human_node_idx = new_root_idx
+			var root_bone_name: String = discover_humanoid_root_bone(nodes, bone_map_dict, human_skin_nodes, human_skin_set, pkgasset.parsed_meta.internal_data, pkgasset.log_debug)
 			pkgasset.log_debug("Root bone name: " + str(root_bone_name))
 			if root_bone_name != "":
 				bone_map_dict[root_bone_name] = "Root"
@@ -2362,6 +2379,11 @@ class FbxHandler:
 				pkgasset.parsed_meta.internal_data["humanoid_root_bone"] = node["name"]
 				if not bone_map_dict.has(node["name"]):
 					root_bone_name = node["name"]
+				else:
+					# A mapped bone above the candidate means the candidate sits inside the
+					# humanoid rig (e.g. an unmapped clavicle between chest and shoulder).
+					# Only bones above every mapped bone may become Root.
+					root_bone_name = ""
 				if not human_skin_set.has(new_root_idx):
 					human_skin_nodes.push_back(new_root_idx)
 					human_skin_set[new_root_idx] = true

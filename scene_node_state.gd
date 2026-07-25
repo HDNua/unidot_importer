@@ -567,11 +567,17 @@ func state_with_avatar_meta(avatar_meta: Object) -> RefCounted:
 	avatar_state.reserved_bone_names["Root"] = true
 	#avatar_state.current_avatar_object = new_avatar
 	avatar_state.humanoid_bone_map_dict = avatar_meta.humanoid_bone_map_crc32_dict.duplicate()
+	# autodetected_bone_map_dict is keyed by Godot-sanitized skeleton bone names, but
+	# prefab GameObjects carry the original Unity names (which differ for bone names
+	# Unity deduplicated, e.g. "Finger_01 1" vs Godot's "Finger_01_2"). Translate keys
+	# back to Unity names so CRC32 lookups from prefab nodes can match.
+	var skel_name_to_unity_name: Dictionary = avatar_meta.internal_data.get("godot_sanitized_to_orig_remap", {}).get("bone_name", {})
 	var has_root: bool = false
 	if avatar_meta.humanoid_bone_map_crc32_dict.is_empty():
 		for orig_bone_name in avatar_meta.autodetected_bone_map_dict:
 			if not avatar_meta.autodetected_bone_map_dict[orig_bone_name] == "Root" or avatar_meta.internal_data.get("humanoid_root_bone", "").is_empty():
-				avatar_state.humanoid_bone_map_dict[avatar_state.crc32.crc32(orig_bone_name)] = avatar_meta.autodetected_bone_map_dict[orig_bone_name]
+				var unity_bone_name: String = skel_name_to_unity_name.get(orig_bone_name, orig_bone_name)
+				avatar_state.humanoid_bone_map_dict[avatar_state.crc32.crc32(unity_bone_name)] = avatar_meta.autodetected_bone_map_dict[orig_bone_name]
 		#	if avatar_meta.internal_data.get("humanoid_root_bone", "") == orig_bone_name:
 		#		avatar_state.humanoid_bone_map_dict[avatar_state.crc32.crc32(orig_bone_name)] = "Root"
 		for orig_bone_name in avatar_meta.humanoid_bone_map_dict:
@@ -592,9 +598,15 @@ func state_with_avatar_meta(avatar_meta: Object) -> RefCounted:
 
 	for i in transform_fileid_to_rotation_delta:
 		if fileid_to_skeleton_bone.has(i):
-			if fileid_to_skeleton_bone[i] == "Hips":
+			var skel_bone_name: String = fileid_to_skeleton_bone[i]
+			if skel_bone_name == "Hips":
 				parent_fileid = i
-			human_bone_to_rotation_delta[fileid_to_skeleton_bone[i]] = transform_fileid_to_rotation_delta[i]
+			human_bone_to_rotation_delta[skel_bone_name] = transform_fileid_to_rotation_delta[i]
+			# Also alias under the original Unity name so prefab bones whose Unity name
+			# differs from the model's sanitized bone name still find their delta.
+			var unity_bone_name: String = skel_name_to_unity_name.get(skel_bone_name, skel_bone_name)
+			if unity_bone_name != skel_bone_name:
+				human_bone_to_rotation_delta[unity_bone_name] = transform_fileid_to_rotation_delta[i]
 
 	avatar_state.human_bone_to_rotation_delta = human_bone_to_rotation_delta
 	state.active_avatars.push_back(avatar_state)
