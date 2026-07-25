@@ -183,7 +183,7 @@ Special Thanks to
 
 | Publisher | Package | Tested with | Support | Details |
 | --- | --- | --- | :---: | --- |
-| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prefabs and scenes instantiate with validated mesh, material, collision, albedo, scene-root, lighting-authoring, and basic particle conversion. ShaderGraph semantics, advanced particle modules, realtime GI, and source-missing collider references still require review. |
+| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prefabs and scenes instantiate with validated mesh, material, collision, albedo, active-state, scene-root, lighting-authoring, and basic particle conversion. ShaderGraph semantics, advanced particle modules, realtime GI, and source-missing collider references still require review. |
 
 `△ Partial` means the package has a validated usable subset, but the import is
 not lossless and still requires review or manual porting for the listed gaps.
@@ -196,10 +196,11 @@ configuration used the native Godot FBX importer, imported into
 `res://Unidot`, and saved translated resources and scenes as text.
 
 Validated results with importer revision
-`d2209b8e5fecd1c77e8732a898447e612fb2f55e`:
+`40f917184968c6193c81ebe3fa719a386ea86c1c`:
 
-- The public synthetic regression suite passed (`11/11`), including dedicated
-  warning-severity and repeated missing-MeshCollider lookup coverage.
+- The public synthetic regression suite passed (`12/12`), including dedicated
+  GameObject active-hierarchy, deferred SkinnedMeshRenderer visibility,
+  warning-severity, and repeated missing-MeshCollider lookup coverage.
 - `2,291` package assets selected and `5,944` output files generated.
 - All `496` POLYGON Prototype prefabs and `2` regular scenes loaded and
   instantiated (`498/498`).
@@ -209,6 +210,12 @@ Validated results with importer revision
 - All `989` generated Synty `.tscn` resources from the package loaded and
   instantiated, including POLYGON Generic and POLYGON Prototype content. This
   is a structural load gate, not a semantic-parity or lossless-conversion claim.
+- All `8` FPS/VR hand prefabs preserved the intended active SkinnedMesh variant:
+  `32` variants produced exactly `8` visible and `24` hidden meshes with `0`
+  mismatches. Instantiating the package `Overview.tscn` produced the same
+  `8/24` result. The importer now combines the renderer's `m_Enabled` state
+  with its source GameObject's active-in-hierarchy state even when the mesh is
+  deferred under a shared Godot `Skeleton3D`.
 - All `30` Unity ParticleSystem/ParticleSystemRenderer pairs generated
   `GPUParticles3D` nodes. The common Initial, Emission, Shape, Color, Size,
   billboard, stretched-billboard, and mesh-renderer subset is converted;
@@ -222,14 +229,17 @@ Validated results with importer revision
 - All `25` ShaderGraph/SubGraph files were preserved as source-only files and
   no `.failed_import` files were generated. Their shader semantics were not
   translated.
-- This full-import run observed warning diagnostics decrease from `667` to
-  `140`, while failure diagnostics remained at `13`.
+- This full-import run observed warning diagnostics decrease from the `667`
+  baseline to `141`, while failure diagnostics remained at `13`. A preceding
+  equivalent run collected `140`; the one-message variation was in concurrent
+  source-only shader warning collection, while the `25/25` source-preservation
+  gate was unchanged.
 - Targeted non-actionable warning noise was `0`: disabled-animation
   `AnimationClip` fallback IDs and identity Humanoid rotations are retained only
   in verbose diagnostics, while repeated missing-MeshCollider lookups no longer
   emit duplicate generic no-meta warnings.
-- The remaining `140` warnings are actionable or explicitly lossy diagnostics:
-  `106` particle conversion warnings, `19` source-only ShaderGraph warnings,
+- The remaining `141` warnings are actionable or explicitly lossy diagnostics:
+  `106` particle conversion warnings, `20` source-only ShaderGraph warnings,
   `9` stripped-object warnings, `4` lighting warnings, and `2` material
   no-meta warnings.
 - The `13` red diagnostics are all for POLYGON Generic MeshColliders whose
@@ -250,6 +260,9 @@ covers the common deterministic subset; modules such as Rotation, Noise,
 Velocity, ClampVelocity, UV animation, Collision, bursts, and some shape or
 billboard modes are omitted or approximated with explicit warnings. Unity
 realtime GI is also not converted to a Godot realtime-GI system.
+The active-state validation above covers the package's serialized base
+GameObject and renderer states; arbitrary prefab overrides that toggle active
+state are not yet covered by this package fixture.
 
 The red error counter in the Unidot log is a count of diagnostic messages, not
 a count of unique failed files or failed scenes. A scene can load successfully
