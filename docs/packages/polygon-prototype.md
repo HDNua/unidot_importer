@@ -17,7 +17,7 @@ Figures below are from importer revision `b60759d` unless noted.
 | Materials and albedo textures | OK | `121` of `139` converted materials bind a texture; the other `18` carry none in the Unity source either. All `13` representative albedo mappings matched |
 | Collision shapes | OK | `0` missing bindings, except `13` colliders whose source mesh is absent from the package itself |
 | GameObject active state and renderer visibility | OK | `32` variants produced exactly `8` visible and `24` hidden meshes, `0` mismatches |
-| Humanoid rigs and skinning | OK | `3,600` skin-deformation checks, `0` failures |
+| Humanoid rigs and skinning | OK for the `8` FPS arm prefabs | `3,600` skin-deformation checks, `0` failures. Scope is those `8` prefabs; the `39` PolygonGeneric character prefabs are not covered by this gate — see [below](#skinning-scope) |
 | Scene root order | OK | Authored root order restored in the demo scene |
 | Lightmap authoring values | OK | `2` bounces, directional mode, `0.025` texel scale, `2048` maximum texture size |
 | ParticleSystem | Partial | All `30` ParticleSystem/ParticleSystemRenderer pairs produced `GPUParticles3D`; `108` warnings mark omitted or approximated modules |
@@ -63,6 +63,16 @@ one of the 8 arm prefabs, every bone, and every `Skin`, the skin deformation
 < 0.01, rotation < 1°, and adjacent-bone probe gaps < 1 cm) across `3,600`
 checks, with `0` failures. Before the fix the same gate reported `256` failures,
 all confined to the right arm chain.
+
+### Skinning scope
+
+That gate covers the `8` FPS arm prefabs and nothing else. The `39`
+PolygonGeneric character prefabs this pack also ships are **not** asserted, and
+the same identity cannot simply be extended to them: they are stored at a pose
+other than the one their meshes were bound in, so `D` is not the identity there
+and they render correctly regardless. The measurement behind that, including the
+renders, is in
+[Several packages in one project](./multi-package.md#what-this-run-also-settled-the-skinning-check-was-not-vendor-neutral).
 
 Falling back to automatic bone mapping exposed two further defects, both
 triggered by rigs that combine an incomplete auto-detected bone map with bone

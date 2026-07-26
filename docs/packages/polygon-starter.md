@@ -10,9 +10,9 @@ imported into `res://Unidot` by `tools/validate_package.py` in a project of its
 own, then checked with `tools/checks/verify_output.gd` and
 `tools/checks/import_report.py`.
 
-**Result: the pack converts correctly.** Every generated scene loads, every
-skinned prefab deforms rigidly at rest, and the converted materials bind the
-textures they are supposed to. No defect specific to this pack was found.
+**Result: the pack converts correctly.** Every generated scene loads and the
+converted materials bind the textures they are supposed to. No defect specific
+to this pack was found.
 
 ## Content split
 
@@ -31,11 +31,15 @@ figures below say more about PolygonGeneric than about the Starter Pack.
 | --- | :---: | --- |
 | Scenes and prefabs | OK | `499/499` load and instantiate (`496` prefabs, `3` authored scenes) |
 | Materials converted from Unity `.mat` | OK | `45` of `55` bind a texture; the other `10` are cloud, glass, skybox, water and blank materials that carry no texture GUID in the Unity source either |
-| Humanoid rigs and skinning | OK | `4` prefabs contain skins; `200` bone/skin rest-pose checks, `0` failures |
+| Humanoid rigs and skinning | Not asserted | `4` prefabs contain skins; they satisfied the rigidity identity on `200` binds when this was measured at revision `5576bf8`, but see below |
 
-The rigidity check is applied to prefabs only. The `3` authored scenes converted
-from `.unity` files pose their characters deliberately, so the rest-pose
-identity does not hold there and asserting it would be wrong.
+The skin-deformation figure is recorded as an observation, not as a pass. The
+identity it tests (`D = global_bone_pose * bind_pose` is `I`) only holds when a
+prefab is stored at the pose its meshes were bound in, which is a property of
+how the publisher authored the pack rather than of the conversion — see
+[Several packages in one project](./multi-package.md#what-this-run-also-settled-the-skinning-check-was-not-vendor-neutral)
+for the measurement that established this. `tools/checks/verify_output.gd` no
+longer asserts it; the pack-specific gates under `tools/publishers/` do.
 
 `507` materials extracted from model files bind no texture. That is expected
 rather than a defect: those are the FBX files' own materials, which point at
