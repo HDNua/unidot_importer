@@ -181,257 +181,97 @@ Special Thanks to
 
 ## HDNua update
 
-### Asset support matrix
+### Tested packages
 
-| Publisher | Package | Tested with | Support | Details |
+| Publisher | Package | Tested with | Support | Report |
 | --- | --- | --- | :---: | --- |
-| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Everything that defines how the package looks and is laid out converts and is validated. Shader semantics and the advanced half of ParticleSystem do not convert. Broken down per area below. |
+| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-prototype.md) |
 
 `△ Partial` means the package has a validated usable subset, but the import is
-not lossless and still requires review or manual porting for the listed gaps.
-The status stays `△` because ShaderGraph content is not translated at all — not
+not lossless and still requires review or manual porting for the gaps below. The
+status stays `△` because ShaderGraph content is not translated at all — not
 because the converted geometry is in doubt.
+
+### What converts
 
 | Area | Status | Notes |
 | --- | :---: | --- |
-| Meshes, transforms, prefab and scene hierarchy | ○ Converted | `498/498` prefabs and scenes instantiate; `989/989` generated scene resources load |
-| Materials and albedo textures | ○ Converted | `121` of `139` converted materials bind a texture; the other `18` carry none in the Unity source either |
-| Collision shapes | ○ Converted | Except `13` colliders whose source mesh is missing from the package itself |
-| GameObject active state and renderer visibility | ○ Converted | `8` visible / `24` hidden variants with `0` mismatches |
-| Humanoid rigs and skinning | ○ Converted | `3,600` skin-deformation checks, `0` failures — see [Humanoid skinning correctness](#humanoid-skinning-correctness) |
-| Scene root order | ○ Converted | Authored root order restored in the demo scene |
-| Lightmap authoring values | ○ Converted | Bounces, mode, texel scale, and texture size preserved |
-| ParticleSystem | △ Partial | The deterministic common subset converts; `108` warnings mark omitted or approximated modules |
-| Realtime GI | ✗ Not converted | Godot `LightmapGI` has no realtime equivalent; Unity's intent is kept as metadata only |
-| ShaderGraph and SubGraph | ✗ Not converted | All `25` files are preserved as source for manual porting; their semantics are not translated |
+| Meshes, transforms, prefab and scene hierarchy | ○ Converted | |
+| Materials and albedo textures | ○ Converted | Underscored Unity texture properties such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map` are recognized, and mask, normal, metallic, roughness, and emission textures are prevented from being picked as generic albedo fallbacks |
+| Collision shapes | ○ Converted | |
+| GameObject active state and renderer visibility | ○ Converted | Combines the renderer's `m_Enabled` state with its source GameObject's active-in-hierarchy state, even when the mesh is deferred under a shared `Skeleton3D` |
+| Humanoid rigs and skinning | ○ Converted | Including rigs whose Unity avatar is structurally invalid, and rigs with bone names duplicated across both hands |
+| Scene root order | ○ Converted | |
+| Lightmap authoring values | ○ Converted | Realtime GI intent is metadata only |
+| ParticleSystem | △ Partial | The deterministic common subset converts; enabled modules outside it produce explicit warnings |
+| Realtime GI | ✗ Not converted | Godot `LightmapGI` has no realtime equivalent |
+| ShaderGraph and SubGraph | ✗ Not converted | Preserved as source for manual porting; semantics are not translated |
 
-Every diagnostic printed during import is accounted for in
-[Understanding the import diagnostics](#understanding-the-import-diagnostics),
-and the residual defects are listed under [Known limitations](#known-limitations).
-
-### Source-data defect: the Synty humanoid avatar
-
-The FPS arm prefabs in this package collapsed on import, and the cause was
-neither Unidot nor Godot — it is an error in the Synty asset's own avatar data.
-
-![The four Standard FPS arm prefabs before the fix: torn and twisted geometry](./hdnua_arms_before.png)
-
-*Before: the Standard FPS arm prefabs, torn apart by the bad avatar data.*
-
-- `Character_FPSHands_01.fbx`, the model used by the Standard prefabs, ships a
-  Unity avatar that maps `Hips → Root`, the rig root bone. That shifts the whole
-  spine chain up by one level: `Spine ← Hips`, `Chest ← Spine_01`,
-  `UpperChest ← Spine_02`, and `Spine_03` is left unmapped.
-- `Character_FPSHands_02.fbx`, used by the FiveFinger prefabs, maps
-  `Hips → Hips` and is correct. This is why the FiveFinger family always
-  imported cleanly while the Standard family did not.
-
-Why it looks fine in Unity: Unity uses the avatar mapping only for humanoid
-animation retargeting, and draws the scene straight from the original rig
-transforms. So a badly authored avatar is harmless in Unity, while Unidot
-trusts that mapping and uses it to rebuild the skeleton — which is why the
-breakage appears only in Godot. This is the point that was previously
-misdiagnosed as an "engine problem". It is really a source-data defect, and one
-the importer can defend against.
-
-That defense now exists. Unidot validates a `humanDescription` bone map against
-the rig hierarchy — every mapped bone's nearest mapped ancestor must also be its
-ancestor in `SkeletonProfileHumanoid` — and falls back to automatic humanoid
-bone mapping when the map is structurally inconsistent, logging a warning that
-says so. A map with no `Hips` at all is rejected the same way.
-
-### Humanoid skinning correctness
-
-Revision `b60759d` closes the last known geometry defect for this package. The
-converted FPS arm prefabs now reproduce the Unity source rig exactly: for every
-one of the 8 arm prefabs, every bone, and every `Skin`, the skin deformation
-`D = G_bone × bind` is the identity transform (translation < 1 cm, scale error
-< 0.01, rotation < 1°, and adjacent-bone probe gaps < 1 cm) across `3,600`
-checks, with `0` failures. Before the fix the same gate reported `256` failures,
-all confined to the right arm chain.
-
-Falling back to automatic bone mapping exposed two further defects, both
-triggered by rigs that combine an incomplete auto-detected bone map with bone
-names duplicated across both hands:
-
-1. **Root hijack.** Humanoid `Root` discovery walked up from an arbitrary mapped
-   bone and claimed the last unmapped ancestor it saw. When the auto-mapper left
-   the clavicles unmapped, a walk starting from a right-hand finger claimed
-   `Clavicle_R` as the profile `Root`. Its original orientation was then never
-   recorded, which corrupted the pre-retarget rest chain — and therefore the
-   rotation delta — of every bone below it by a constant 138.7°. The walk now
-   rejects any candidate that still has a mapped bone above it, so only bones
-   above the entire mapped rig (such as an `Armature` node) can become `Root`.
-2. **Bone name space mismatch.** Prefab conversion looked bones up in the
-   auto-detected map using Godot-sanitized skeleton names (`Finger_01_2`), while
-   prefab GameObjects carry Unity's de-duplicated names (`Finger_01 1`). Every
-   affected right-hand finger therefore lost both its humanoid mapping and its
-   rotation delta. Lookups are now translated through
-   `godot_sanitized_to_orig_remap`, and rotation deltas are aliased under the
-   Unity names.
-
-All three fixes ship with asset-independent synthetic regression tests, and the
-full public test suite passes (`15/15`).
-
-![The same four Standard FPS arm prefabs after the fix: clean, symmetric arms](./hdnua_arms_after.png)
-
-*After: the same four prefabs, same camera, with the fixes applied.*
-
-![Close-up of Character_FPS_Arms_Standard_01 showing a matched left and right arm](./hdnua_arms_closeup.png)
-
-*`Character_FPS_Arms_Standard_01` in close-up. The right arm — the one that used
-to be twisted around the wrist axis — now mirrors the left.*
-
-![The FPS arm prefabs in the package Overview scene, all intact](./hdnua_arms_overview.png)
-
-*The same result in context: the FPS arm rows of the package `Overview` scene,
-rendered at runtime rather than in the editor, so no gizmos or RESET pose
-overrides are in frame.*
+Per-package figures backing each row are in that package's report.
 
 ### Understanding the import diagnostics
 
-Importing this package prints a large number of engine-level `ERROR` lines and
-shows non-zero warning and error counters in the Unidot dialog. **None of them
-indicate a failed or incorrect conversion of POLYGON Prototype.** They were
-classified message-by-message from an instrumented full import at revision
-`b60759d`. The summary below is that classification.
+Importing a Synty package prints a large number of engine-level `ERROR` lines
+and leaves non-zero warning and error counters in the Unidot dialog. **This is
+expected, and on its own it does not indicate a failed or incorrect
+conversion.** Every diagnostic observed so far falls into one of four classes,
+three of which are defects in the source package rather than in the conversion.
 
 ![The Unidot import dialog after a full POLYGON Prototype import, reporting 124 warnings and 13 errors alongside "Import complete."](./hdnua_import_dialog.png)
 
-*What a successful import of this package looks like: `Import complete.` with
-`124` warnings and `13` errors still on the counters. The rest of this section
-accounts for every one of them.*
+*What a successful import looks like: `Import complete.` with warnings and
+errors still on the counters. The POLYGON Prototype report accounts for every
+one of them.*
 
-**The thousands of red `ERROR` lines in the Godot console are dead texture
-paths baked into the vendor's FBX files.** The Synty artists exported the FBX
-files with their own working textures still assigned — `.psd`, `.tif`, and
-source `.png` files living under their personal Dropbox working folders. Those
-paths are stored verbatim inside the shipped FBX, but the files themselves are
-not part of the `.unitypackage`; only the flattened runtime `.png` atlases are.
-Unity never surfaces this because it ignores FBX-embedded material references
-and binds textures through the `.mat` asset's GUID instead. Godot's FBX parser
-is more literal: it resolves each embedded path, fails, and reports it. In one
-full import this produced `10,736` engine `ERROR` lines and `3,916`
-`FBX: Image index ... couldn't be loaded` warnings, referencing `2,576` `.psd`,
-`1,324` `.png`, `12` `.tga`, and `4` `.tif` targets — `1,483` of which point at
-artist working directories that were never shipped. Five further warnings are
-case-mismatched folder names inside the package (`textures/` vs `Textures/`).
+**1. Dead texture paths baked into the vendor's FBX files.** This is the source
+of the thousands of red `ERROR` lines in the Godot console. Synty artists export
+their FBX files with their own working textures still assigned — `.psd`, `.tif`,
+and source `.png` files under their personal working folders, and in some cases
+a plain `C:/Users/<artist>/Downloads/...` path. Those paths are stored verbatim
+inside the shipped FBX, but the files themselves are not part of the
+`.unitypackage`; only the flattened runtime `.png` atlases are. Unity never
+surfaces this because it ignores FBX-embedded material references and binds
+textures through the `.mat` asset's GUID instead. Godot's FBX parser is more
+literal: it resolves each embedded path, fails, and reports it. This is cosmetic
+because Unidot does not trust FBX-embedded materials either — it converts the
+Unity `.mat` assets and assigns them after import.
 
-This is cosmetic because Unidot does not trust FBX-embedded materials in the
-first place: it converts the Unity `.mat` assets and assigns them after import.
-Verified on the converted output, `121` of `139` converted materials have a
-real albedo texture bound; the remaining `18` are glass, water, glow, skybox,
-blank, and FX materials that carry no texture GUID in the Unity source either.
+**2. References the package ships already broken.** Prefabs can point at a mesh,
+texture, or script GUID that no `.meta` file in the package owns, so the
+reference is dead in Unity too. Unidot reports each one once as a structured
+source-data failure, skips only the affected component, and converts the rest of
+the object normally. These are what fill the red error counter in the dialog.
 
-**The `13` red errors in the Unidot dialog are a defect in the vendor package,
-not in the conversion.** All `13` are the same message —
-`Unable to create MeshCollider shape because the source mesh could not be resolved`
-— raised by 13 POLYGON **Generic** prop prefabs (`SM_Gen_Prop_Sack_01` through
-`_05`, `Sack_Stack_01`/`_02`, `Pot_04`/`_05`, `Potion_01`, `Rope_Knot_01`,
-`Screen_01`, `Skull_01`). Each has a `MeshCollider` pointing at a collision-mesh
-GUID that no `.meta` file anywhere in the Unity project owns, meaning the
-reference is already broken in Unity. Unidot reports each one once as a
-structured source-data failure, skips only the collision shape, and converts the
-rest of the prefab normally. **POLYGON Prototype itself produces `0` errors.**
+**3. Feature-gap notices.** Where Godot has no equivalent for a Unity feature —
+most ParticleSystem modules, ShaderGraph semantics, realtime GI, lightmap values
+outside Godot's supported range — Unidot converts what it can and warns
+explicitly about what it approximated or skipped. These are the bulk of the
+warning counter.
 
-**The `124` dialog warnings are feature-gap notices, not damage.** The
-distribution over the `152` raw warning records emitted during the run (the
-dialog counts only the subset on assets selected for import, so `.cs` and
-`.shader` assets are excluded) is:
+**4. Unidot's own validators reporting that they caught something.** The
+humanoid bone-map validator logs a warning when it rejects a structurally
+invalid Unity avatar and falls back to automatic bone mapping, and the `Root`
+guard logs when it refuses to overwrite an existing profile mapping. A warning
+from these means the defense worked.
 
-| Count | Category |
-| ---: | --- |
-| `108` | ParticleSystem modules Godot has no equivalent for, or that are approximated (Rotation, Noise, ClampVelocity, Velocity, UV animation, Collision, emission bursts, stretched billboards, hemisphere and sphere-shell shapes, 3D start size/rotation) |
-| `23` | ShaderGraph/SubGraph files preserved as source-only instead of translated |
-| `9` | Stripped intermediate prefab transforms |
-| `4` | Unity lightmap authoring values clamped into Godot's supported range |
-| `3` | Heuristic main-object-id resolution |
-| `3` | Humanoid bone-map validators reporting that they rejected a bad source avatar |
-| `2` | Material references without a meta entry, loaded directly |
+Only one class of diagnostic points at a defect neither the package nor Unidot
+can be blamed for; see [Known limitations](#known-limitations).
 
-The three humanoid warnings are the importer's own defenses reporting success,
-not problems: one is the `humanDescription` validator rejecting
-`Character_FPSHands_01`'s structurally inconsistent Unity avatar described
-above, and two are the guard that refuses to overwrite an existing profile
-mapping with `Root`.
+### Source-data defects Unidot defends against
 
-**Conclusion: for the Synty POLYGON Prototype package, this revision is a
-correct Unity → Godot asset conversion.** Every diagnostic above is either a
-defect in the source package that Unity also carries, or an explicit notice
-about a Godot feature gap. None of them corresponds to a mesh, material,
-transform, or skinning value that was converted incorrectly.
+Unity's humanoid avatar is used only for animation retargeting, and Unity draws
+scenes straight from the original rig transforms. A badly authored avatar is
+therefore invisible in Unity, but an importer that trusts it to rebuild the
+skeleton will produce a collapsed mesh. Unidot validates a `humanDescription`
+bone map against the rig hierarchy — every mapped bone's nearest mapped ancestor
+must also be its ancestor in `SkeletonProfileHumanoid` — and falls back to
+automatic humanoid bone mapping when the map is structurally inconsistent,
+logging a warning that says so. A map with no `Hips` at all is rejected the same
+way.
 
-### Synty POLYGON Prototype validation details
-
-The HDNua fork has been tested with the Synty **POLYGON - Prototype Pack**
-`.unitypackage` on Godot `4.7.1-stable.mono` for macOS. The validated
-configuration used the native Godot FBX importer, imported into
-`res://Unidot`, and saved translated resources and scenes as text.
-
-Validated results, originally collected with importer revision
-`40f917184968c6193c81ebe3fa719a386ea86c1c` and re-confirmed at `b60759d`:
-
-- The public synthetic regression suite passed (`15/15`), including dedicated
-  GameObject active-hierarchy, deferred SkinnedMeshRenderer visibility,
-  warning-severity, repeated missing-MeshCollider lookup, humanoid avatar bone
-  map validation, humanoid `Root` discovery, and duplicate-bone-name prefab
-  remap coverage.
-- All `8` FPS arm prefabs passed the skin-deformation identity gate
-  (`3,600` checks, `0` failures). See
-  [Humanoid skinning correctness](#humanoid-skinning-correctness).
-- `2,291` package assets selected and `5,944` output files generated.
-- All `496` POLYGON Prototype prefabs and `2` regular scenes loaded and
-  instantiated (`498/498`).
-- All `13` expected representative albedo texture mappings matched (`13/13`).
-- The POLYGON Prototype validation found `0` missing mesh, material, or
-  collision-shape bindings.
-- All `989` generated Synty `.tscn` resources from the package loaded and
-  instantiated, including POLYGON Generic and POLYGON Prototype content. This
-  is a structural load gate, not a semantic-parity or lossless-conversion claim.
-- All `8` FPS/VR hand prefabs preserved the intended active SkinnedMesh variant:
-  `32` variants produced exactly `8` visible and `24` hidden meshes with `0`
-  mismatches. Instantiating the package `Overview.tscn` produced the same
-  `8/24` result. The importer now combines the renderer's `m_Enabled` state
-  with its source GameObject's active-in-hierarchy state even when the mesh is
-  deferred under a shared Godot `Skeleton3D`.
-- All `30` Unity ParticleSystem/ParticleSystemRenderer pairs generated
-  `GPUParticles3D` nodes. The common Initial, Emission, Shape, Color, Size,
-  billboard, stretched-billboard, and mesh-renderer subset is converted;
-  enabled unsupported modules produce explicit warnings.
-- Unity `SceneRoots` restored the authored root order in the demo scene.
-- The package LightingSettings asset generated a Godot resource, and the demo
-  `LightmapGI` preserved the mapped authoring values (`2` bounces, directional
-  mode, `0.025` texel scale, and `2048` maximum texture size). Unity realtime-GI
-  intent is metadata-only because Godot `LightmapGI` has no equivalent realtime
-  conversion.
-- All `25` ShaderGraph/SubGraph files were preserved as source-only files and
-  no `.failed_import` files were generated. Their shader semantics were not
-  translated.
-- This full-import run observed warning diagnostics decrease from the `667`
-  baseline to `141`, while failure diagnostics remained at `13`. A preceding
-  equivalent run collected `140`; the one-message variation was in concurrent
-  source-only shader warning collection, while the `25/25` source-preservation
-  gate was unchanged. The `b60759d` re-run counted `124` dialog warnings and the
-  same `13` failures, from `152` raw warning records and `26` raw failure
-  records; the difference between the raw and dialog counts is the `.cs` and
-  `.shader` assets that are deselected from import by default.
-- Targeted non-actionable warning noise was `0`: disabled-animation
-  `AnimationClip` fallback IDs and identity Humanoid rotations are retained only
-  in verbose diagnostics, while repeated missing-MeshCollider lookups no longer
-  emit duplicate generic no-meta warnings.
-- The remaining warnings are actionable or explicitly lossy diagnostics, and are
-  broken down per category in
-  [Understanding the import diagnostics](#understanding-the-import-diagnostics).
-- The `13` red diagnostics are all for POLYGON Generic MeshColliders whose
-  referenced source mesh GUID/fileID is absent from the package. Each missing
-  reference is reported once as a structured source-data failure instead of a
-  null-mesh script error. The referenced GUIDs are owned by no `.meta` file
-  anywhere in the Unity project, so the references are already broken in Unity.
-
-The material mapping update recognizes underscored Unity texture properties
-such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map`, while
-preventing mask, normal, metallic, roughness, and emission textures from being
-selected as generic albedo fallbacks.
+The POLYGON Prototype pack ships exactly such an avatar, and the
+[package report](./docs/packages/polygon-prototype.md#source-data-defect-the-synty-humanoid-avatar)
+walks through it as a worked example, including the before and after renders.
 
 ### Known limitations
 
@@ -441,38 +281,31 @@ covers the common deterministic subset; modules such as Rotation, Noise,
 Velocity, ClampVelocity, UV animation, Collision, bursts, and some shape or
 billboard modes are omitted or approximated with explicit warnings. Unity
 realtime GI is also not converted to a Godot realtime-GI system.
-The active-state validation above covers the package's serialized base
-GameObject and renderer states; arbitrary prefab overrides that toggle active
-state are not yet covered by this package fixture.
+Active-state validation covers serialized base GameObject and renderer states;
+arbitrary prefab overrides that toggle active state are not yet covered by any
+package fixture.
 
-One diagnostic is a genuine defect that Unidot cannot correct. Godot's FBX
-importer resolves an embedded texture reference by probing candidate
-directories, and one of those probes is a lowercase `textures/`. On a
-case-insensitive filesystem that probe opens a file stored as `Textures/`,
-Godot warns about the case mismatch, and the requested spelling is what gets
-written into the extracted mesh. In this package that affects exactly one
-texture (`Generic_Road_01.png`) across `23` files under `Models/extracted/`,
-which would fail to load if the project were exported to a case-sensitive
-filesystem. The converted `.mat` resources are unaffected, so prefabs and
-scenes render correctly. Unidot cannot repair the stored reference from its
-post-import script: it writes those `.mesh` files, but Godot's own
-`save_to_file` subresource extraction rewrites the same paths afterwards, so
-any correction made during post-import is overwritten. Fixing it properly
-requires a change in the engine's texture probe or in how the model `.import`
-configuration extracts meshes.
+One defect belongs to neither the package nor Unidot, and Unidot cannot correct
+it. Godot's FBX importer resolves an embedded texture reference by probing
+candidate directories, and one of those probes is a lowercase `textures/`. On a
+case-insensitive filesystem that probe opens a file stored as `Textures/`, Godot
+warns about the case mismatch, and the requested spelling is what gets written
+into the extracted mesh. That reference then fails to load if the project is
+exported to a case-sensitive filesystem. The converted `.mat` resources are
+unaffected, so prefabs and scenes render correctly. Unidot cannot repair the
+stored reference from its post-import script: it writes those `.mesh` files, but
+Godot's own `save_to_file` subresource extraction rewrites the same paths
+afterwards, so any correction made during post-import is overwritten. Fixing it
+properly requires a change in the engine's texture probe or in how the model
+`.import` configuration extracts meshes.
 
 The red error counter in the Unidot log is a count of diagnostic messages, not
 a count of unique failed files or failed scenes. A scene can load successfully
-while an unsupported component or override inside it was skipped. In
-particular, the deeper albedo and missing-binding checks above are scoped to the
-`498` POLYGON Prototype prefabs and scenes; the `989/989` check only establishes
-that every generated scene resource can be loaded and instantiated. In this
-validation run, the remaining `13` red diagnostics are the source-missing
-POLYGON Generic collider references described above.
+while an unsupported component or override inside it was skipped.
 
-This is a compatibility result for this package and configuration, not a claim
-that every Synty package or every Unity feature is fully supported. Custom
-ShaderGraph/SubGraph content, MonoBehaviours, advanced ParticleSystems,
+These are compatibility results for the packages and configuration listed above,
+not a claim that every Synty package or every Unity feature is fully supported.
+Custom ShaderGraph/SubGraph content, MonoBehaviours, advanced ParticleSystems,
 realtime GI, and source assets with missing external references may still
 require manual work.
 
