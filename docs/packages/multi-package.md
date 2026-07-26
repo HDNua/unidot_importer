@@ -10,11 +10,22 @@ Prototype-then-Town import used Godot `4.7.1-stable.mono` for macOS at revision
 `69bd28a`, with `tools/checks/package_overlap.py` for the static comparison and
 `tools/validate_package.py A B --run --verify` for the import.
 
+The staged six-package validation used Godot `4.7.1-stable.mono` at revision
+`c0892c5`. It imported Starter, Town, War, Prototype, Sci-Fi City, and Fantasy
+Kingdom in that order, ran the vendor-neutral output verifier after every stage,
+and then ran the package-scoped source-pose gate once for each source package
+against the final project.
+
 **Result: importing several packages together is order-dependent, and one
 observed case loses content.** Where two packages ship the same GUID with
 different bytes, the package imported last replaces the file. Nothing warns
 during the import, and content already converted from the earlier package that
 referenced a part the replacement does not have is left incomplete.
+
+The measured six-package order avoids that known underwear loss, but it does
+**not** pass final output verification. Adding Fantasy Kingdom exposes `52`
+meshless nodes rooted in Fantasy-local model references. All six source-pose
+gate runs pass, so the new finding is on a different, non-skinning invariant.
 
 ## What the packages disagree about
 
@@ -221,6 +232,72 @@ than reality: the skeleton lookup that found no skins and passed, the posed
 authored scenes that failed, and this one. All three share a shape — a check
 that is confident about a precondition it never measured.
 
+## The measured six-package validation order
+
+At revision `c0892c5`, a clean project imported the six packages in the
+recommended validation order. Every import completed. The table is cumulative:
+each row verifies the project after adding that row's package.
+
+| Stage | Package added | Scenes loaded / instantiated | Declared node paths | Missing paths | `MeshInstance3D` nodes | Meshless | Engine `ERROR` lines | Case warnings | Verify |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | Starter | `499/499` | `2,855` | `0` | `1,422` | `0` | `5,432` | `5` | PASS |
+| 2 | Town | `1,253/1,253` | `12,214` | `0` | `8,037` | `0` | `11,291` | `5` | PASS |
+| 3 | War | `1,840/1,840` | `21,133` | `0` | `15,336` | `0` | `10,622` | `5` | PASS |
+| 4 | Prototype | `2,340/2,340` | `25,091` | `0` | `17,663` | `0` | `9,691` | `5` | PASS |
+| 5 | Sci-Fi City | `2,979/2,979` | `32,146` | `0` | `22,974` | `0` | `11,042` | `5` | PASS |
+| 6 | Fantasy Kingdom | `5,175/5,175` | `77,811` | `0` | `58,646` | **`52`** | `29,783` | `5` | **FAIL** |
+
+The engine diagnostic counts come from the stage-scoped import summaries; they
+are context, not the verifier's verdict. `import_completed` was true and the
+Unidot warning and failure counts were both zero at every stage.
+
+Three predictions can be separated. First, Town overwriting Starter's three
+base models at stage 2 produced no finding in the enumerated scene, declared-
+path, or mesh checks. This is measured evidence for this run, not proof that
+Starter-first is generally safe. Second, Prototype arriving at stage 4 restored
+the larger `Generic_Characters.fbx` build: declared-path findings remained zero,
+and the Prototype source-pose gate checked all `39` skin prefabs, including both
+weaker inherited-FBX cases. The known underwear loss was therefore avoided.
+Third, the prediction of zero meshless nodes was wrong: stage 6 failed.
+
+The `52` findings are `17` direct meshless nodes in `16` Fantasy prefabs, plus
+`35` uses of those prefabs in three Fantasy scenes (`9` in `Demo`, `9` in
+`Demo_ExteriorOnly_Optimized`, and `17` in `Overview`). The Unity source has a
+non-zero `MeshFilter.m_Mesh` reference for every direct finding. The affected
+model GUIDs occur only in Fantasy Kingdom, and no finding is under another
+package's output tree, so this is not evidence of a shared-GUID package
+replacement. The representative failures instead show model sub-object/file-ID
+resolution gaps: mannequin references do not resolve to Godot's extracted
+`Mesh_###` resources, while two optimized tower parts are represented by one
+combined extracted mesh.
+
+A clean Fantasy-Kingdom-only control at the same revision reproduced the exact
+same `52` scene/node findings: `2,687/2,687` scenes loaded, all `48,801`
+declared node paths survived, and `52/37,069` mesh nodes were meshless. A
+line-for-line comparison of the complete finding inventories was identical.
+This isolates the finding from the preceding five-package import order; it is a
+Fantasy model-reference conversion limitation exposed by the six-package run,
+not a multi-package collision.
+
+The final project then passed all six package-scoped source-pose gates:
+
+| Source package | Source / output skin prefabs | Checked | Direct YAML | Persisted FBX composition (weaker) | Bones compared | Unsupported / mismatches | Negative controls | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Starter | `4/4` | `4` | `4 / 106` | `0 / 0` | `106` | `0 / 0` | `1/1` | PASS |
+| Town | `31/31` | `31` | `31 / 1,455` | `0 / 0` | `1,455` | `0 / 0` | `1/1` | PASS |
+| War | `42/42` | `42` | `42 / 1,994` | `0 / 0` | `1,994` | `0 / 0` | `1/1` | PASS |
+| Prototype | `39/39` | `39` | `37 / 1,826` | `2 / 154` | `1,980` | `0 / 0` | `2/2` | PASS |
+| Sci-Fi City | `45/45` | `45` | `43 / 1,997` | `2 / 154` | `2,151` | `0 / 0` | `2/2` | PASS |
+| Fantasy Kingdom | `52/52` | `52` | `50 / 2,176` | `2 / 154` | `2,330` | `0 / 0` | `2/2` | PASS |
+
+Each run also had zero source-missing and output-unexplained prefabs, process
+exit `0`, and maximum observed position, rotation, and scale error `0`. The
+validation context and materialized add-on matched revision `c0892c5`. These
+rows are package-manifest scopes and may overlap; their counts must not be added
+and called a unique six-package inventory. The persisted-FBX branch remains the
+weaker source-consistency oracle described above, not an independent Unity
+oracle.
+
 ## Recommendation
 
 Before importing packages together, run the static comparison — it is quick, it
@@ -232,8 +309,11 @@ tools/checks/package_overlap.py "A.unitypackage" "B.unitypackage"
 
 The only order constraint supported by the directional screen is to import Town
 and War before Fantasy Kingdom, Prototype, or Sci-Fi City. That minimizes the
-one observed consumer-reference signal. For the six-pack integration validation,
-use this deterministic order:
+one observed consumer-reference signal. The measured run confirms that the
+following deterministic order avoids the known underwear loss, but its final
+output still contains the separate Fantasy mesh-reference findings above.
+Those findings also reproduce when Fantasy Kingdom is imported alone, so this
+order cannot work around them:
 
 1. Starter
 2. Town
