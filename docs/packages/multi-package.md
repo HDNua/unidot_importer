@@ -5,8 +5,9 @@ about what happens when several land in the same project, which is what a real
 project does and the only case where packages that share a GUID contend for the
 same output path.
 
-Tested on Godot `4.7.1-stable.mono` for macOS at importer revision `69bd28a`,
-with `tools/checks/package_overlap.py` for the static comparison and
+The static comparison was rerun at importer revision `e5e93b3`. The measured
+Prototype-then-Town import used Godot `4.7.1-stable.mono` for macOS at revision
+`69bd28a`, with `tools/checks/package_overlap.py` for the static comparison and
 `tools/validate_package.py A B --run --verify` for the import.
 
 **Result: importing several packages together is order-dependent, and one
@@ -45,6 +46,58 @@ by assets that converted perfectly.
 
 That there are `0` pathname collisions is worth stating: the packs never disagree
 about *which* asset a GUID names, only about its content.
+
+## Directional static screen across all 15 pairs
+
+The extended comparison makes a second archive pass over supported text assets
+and groups the file IDs they reference by conflicting model build. For each
+replacement direction it reports IDs observed only among consumers accompanying
+the displaced build, then names those consumer assets as heuristic review
+candidates.
+
+This is a **consumer-reference heuristic**, not an import result or a model
+inventory. It does not inspect whether the winning model actually contains an
+ID. A non-zero result names what to review; zero means only that no directional
+consumer-reference asymmetry was observed. Neither result establishes
+compatibility, a lossless order, or a superset relationship.
+
+The table covers all `6 choose 2 = 15` pairs. `S/C/M` means shared GUIDs,
+conflicting GUIDs, and meta-conflicting GUIDs. A directional cell is
+`consumer-only file IDs / candidate assets`; for pair `A / B`, “A later” means
+A's model build wins and consumers accompanying B are the displaced side. A
+dash means the pair has no differing model build to analyze. No import was run
+for this table, and every pair had zero pathname collisions.
+
+| Pair (A / B) | S / C / M | Differing models | A later | B later |
+| --- | ---: | ---: | ---: | ---: |
+| Fantasy Kingdom / Prototype | `1257 / 0 / 0` | `0` | — | — |
+| Fantasy Kingdom / Sci-Fi City | `1257 / 1 / 0` | `0` | — | — |
+| Fantasy Kingdom / Starter | `1054 / 75 / 58` | `3` | `0 / 0` | `0 / 0` |
+| Fantasy Kingdom / Town | `1255 / 1 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Fantasy Kingdom / War | `1255 / 61 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Prototype / Sci-Fi City | `1257 / 1 / 0` | `0` | — | — |
+| Prototype / Starter | `1054 / 75 / 58` | `3` | `0 / 0` | `0 / 0` |
+| Prototype / Town | `1255 / 1 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Prototype / War | `1255 / 61 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Sci-Fi City / Starter | `1054 / 76 / 58` | `3` | `0 / 0` | `0 / 0` |
+| Sci-Fi City / Town | `1255 / 2 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Sci-Fi City / War | `1255 / 62 / 0` | `1` | `0 / 0` | `57 / 2` |
+| Starter / Town | `1054 / 75 / 58` | `3` | `0 / 0` | `0 / 0` |
+| Starter / War | `1054 / 74 / 58` | `3` | `0 / 0` | `0 / 0` |
+| Town / War | `1255 / 60 / 0` | `0` | — | — |
+
+All six non-zero directions are the same `Generic_Characters.fbx` split. If
+Town or War supplies the winning build after Fantasy Kingdom, Prototype, or
+Sci-Fi City, the screen finds `57` consumer-only IDs and the same two underwear
+prefabs already confirmed by the Prototype-then-Town import below. Reversing
+that order produces `0 / 0`, but that remains “no observed asymmetry,” not a
+compatibility proof.
+
+Starter's three differing base models produce `0 / 0` in both directions across
+all five of its pairs. This method therefore does not validate “Starter first.”
+It also does not establish the broader assumption that a larger model build is
+a superset. A reliable verdict on that question would require a separate model
+sub-object/file-ID inventory.
 
 ## The measured case: Prototype, then Town
 
@@ -138,11 +191,22 @@ needs no Godot, and it names what will contend:
 tools/checks/package_overlap.py "A.unitypackage" "B.unitypackage"
 ```
 
-Where a model conflicts, prefer the package holding the **larger** build if it is
-a superset, by importing it last. For the Synty packs measured here that means
-importing Town or War *before* Prototype, Sci-Fi City or Fantasy Kingdom, and
-importing Starter first of all. Then verify the packages imported earlier, not
-just the last one:
+The only order constraint supported by the directional screen is to import Town
+and War before Fantasy Kingdom, Prototype, or Sci-Fi City. That minimizes the
+one observed consumer-reference signal. For the six-pack integration validation,
+use this deterministic order:
+
+1. Starter
+2. Town
+3. War
+4. Prototype
+5. Sci-Fi City
+6. Fantasy Kingdom
+
+Starter's position and the order within the two model-build groups are
+tie-breakers, not proven safety properties. This is a validation order chosen to
+minimize the observed heuristic signal, not a guaranteed lossless order. Verify
+the packages imported earlier after every stage, not only the last one:
 
 ```bash
 tools/validate_package.py "A.unitypackage" "B.unitypackage" --run --verify
