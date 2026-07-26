@@ -185,10 +185,29 @@ Special Thanks to
 
 | Publisher | Package | Tested with | Support | Details |
 | --- | --- | --- | :---: | --- |
-| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Prefabs and scenes instantiate with validated mesh, material, collision, albedo, active-state, humanoid skinning, scene-root, lighting-authoring, and basic particle conversion. ShaderGraph semantics, advanced particle modules, realtime GI, and source-missing collider references still require review. |
+| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | Everything that defines how the package looks and is laid out converts and is validated. Shader semantics and the advanced half of ParticleSystem do not convert. Broken down per area below. |
 
 `△ Partial` means the package has a validated usable subset, but the import is
 not lossless and still requires review or manual porting for the listed gaps.
+The status stays `△` because ShaderGraph content is not translated at all — not
+because the converted geometry is in doubt.
+
+| Area | Status | Notes |
+| --- | :---: | --- |
+| Meshes, transforms, prefab and scene hierarchy | ○ Converted | `498/498` prefabs and scenes instantiate; `989/989` generated scene resources load |
+| Materials and albedo textures | ○ Converted | `121` of `139` converted materials bind a texture; the other `18` carry none in the Unity source either |
+| Collision shapes | ○ Converted | Except `13` colliders whose source mesh is missing from the package itself |
+| GameObject active state and renderer visibility | ○ Converted | `8` visible / `24` hidden variants with `0` mismatches |
+| Humanoid rigs and skinning | ○ Converted | `3,600` skin-deformation checks, `0` failures — see [Humanoid skinning correctness](#humanoid-skinning-correctness) |
+| Scene root order | ○ Converted | Authored root order restored in the demo scene |
+| Lightmap authoring values | ○ Converted | Bounces, mode, texel scale, and texture size preserved |
+| ParticleSystem | △ Partial | The deterministic common subset converts; `108` warnings mark omitted or approximated modules |
+| Realtime GI | ✗ Not converted | Godot `LightmapGI` has no realtime equivalent; Unity's intent is kept as metadata only |
+| ShaderGraph and SubGraph | ✗ Not converted | All `25` files are preserved as source for manual porting; their semantics are not translated |
+
+Every diagnostic printed during import is accounted for in
+[Understanding the import diagnostics](#understanding-the-import-diagnostics),
+and the residual defects are listed under [Known limitations](#known-limitations).
 
 ### Source-data defect: the Synty humanoid avatar
 
