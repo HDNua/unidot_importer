@@ -151,11 +151,15 @@ about each item: absence is invisible to it.
 ## What this run also settled: the skinning check was not vendor-neutral
 
 Running this comparison put `tools/checks/verify_output.gd` over content no gate
-had covered before, and it reported `22,737` bone/skin failures on the `39`
-PolygonGeneric character prefabs — a constant `115.17°` across whole bone
-chains, which is the signature of the Root-hijack defect fixed for the FPS arms.
+had covered before, and it reported `22,737` bone/skin failures while scanning
+`39` skin-bearing prefabs in total. Those `39` already included the `8` FPS arm
+prefabs that passed. The failures came from `20` posed PolygonGeneric full-
+character prefabs plus one check in `Fov_01`; the other `10` non-FPS prefabs
+also passed. Across the affected character chains the constant angle looked
+like the signature of the Root-hijack defect fixed for the FPS arms.
 
-It was a false alarm. **The characters render correctly.** Rendering
+The character failures were a false alarm. **The characters render correctly.**
+Rendering
 `SM_Gen_Chr_Business_Female_01` and `SM_Gen_Chr_Peasent_Male_01` from this
 project shows clean, undistorted T-poses with correct proportions and materials.
 
@@ -165,10 +169,10 @@ before the first frame (identical results after), binds with no vertex weight
 duplicated name (index and name agree on all `1,150`), and an uncompensated mesh
 transform (identity). What remains is the check's own precondition. The identity
 `D = global_bone_pose * bind_pose = I` holds only when the skeleton sits at the
-pose its meshes were bound in; these prefabs are deliberately stored in another
-pose, so they miss the identity and render correctly, which is what skinning
-does. The FPS arm prefabs happen to sit at bind pose, which is why the same test
-is meaningful for them.
+pose its meshes were bound in; the affected character prefabs are deliberately
+stored in another pose, so they miss the identity and render correctly, which is
+what skinning does. The FPS arm prefabs happen to sit at bind pose, which is why
+the same test is meaningful for them.
 
 That precondition cannot be tested independently — the identity *is* the test.
 So the check needs outside knowledge of how a publisher authors prefabs, which

@@ -18,11 +18,12 @@ extends SceneTree
 # rendering perfectly.
 #
 # Measured on POLYGON Prototype at revision 69bd28a: the eight prefabs below
-# satisfy the identity on all 456 of their binds, while the 39 PolygonGeneric
-# character prefabs in the same project miss it on 22,737 binds and render
-# correctly regardless — they are simply not stored at their bind pose. Knowing
-# which prefabs are is knowledge about how this publisher authors this pack, so
-# the gate lives with the pack.
+# satisfy the identity on all 456 of their binds. A broader scan examined 39
+# skin-bearing prefabs total, already including these eight, and reported 22,737
+# failures across 20 posed PolygonGeneric full-character prefabs plus one Fov_01
+# check. The affected characters render correctly; they are not stored at their
+# bind pose. Knowing which prefabs satisfy the identity is publisher knowledge,
+# so this gate lives with the pack.
 #
 # The defect this exists for is described in
 # docs/packages/polygon-prototype.md#humanoid-skinning-correctness: a Root

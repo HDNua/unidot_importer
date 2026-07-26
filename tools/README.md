@@ -108,11 +108,12 @@ identity *is* the test. A prefab authored in any other pose fails it while
 rendering perfectly.
 
 Measured on POLYGON Prototype: the eight FPS arm prefabs satisfy the identity on
-every bind, while the `39` PolygonGeneric character prefabs in the same project
-miss it on `22,737` binds and render correctly anyway — they are simply not
-stored at their bind pose. Rendering them confirmed it. Knowing which prefabs
-are at bind pose is knowledge about how a publisher authors a pack, which is
-exactly the kind of thing this directory is for.
+every bind. A broader scan examined `39` skin-bearing prefabs total, already
+including those eight, and reported `22,737` failures across `20` posed
+PolygonGeneric full-character prefabs plus one `Fov_01` check. The affected
+characters render correctly anyway; they are not stored at their bind pose.
+Knowing which prefabs satisfy the identity is knowledge about how a publisher
+authors a pack, which is exactly the kind of thing this directory is for.
 
 New publishers get a sibling directory. Nothing in `checks/` may import from
 `publishers/`.
