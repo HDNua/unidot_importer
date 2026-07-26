@@ -1,16 +1,30 @@
 #!/usr/bin/env python3
-"""Scaffold (and optionally run) an isolated Godot project for validating one
-.unitypackage against this checkout of Unidot.
+"""Scaffold (and optionally run) an isolated Godot project for validating
+.unitypackage files against this checkout of Unidot.
 
-Each package gets its own project, so its asset database, import cache and
-output tree cannot be contaminated by a previous package. That isolation is what
-makes the per-package figures in docs/packages/ attributable.
+Given one package, this measures that package. Each one gets its own project, so
+its asset database, import cache and output tree cannot be contaminated by a
+previous package. That isolation is what makes the per-package figures in
+docs/packages/ attributable.
 
     tools/validate_package.py "~/art/POLYGON - Prototype Pack.unitypackage" --run
 
-By default the project is created next to the package under a directory named
-after it. The Unidot revision used is recorded in the project directory so a
-report can state what it was produced with.
+Given several, they are imported into one project one after another, in the
+order given. That is a different measurement and it is deliberately not the way
+to produce per-package figures: it is the integration case, the only one where
+packages that share a GUID actually contend for the same output path. Each
+package gets its own stage log (import.1.log, import.2.log, ...) so a diagnostic
+can still be attributed to the stage that raised it.
+
+    tools/validate_package.py A.unitypackage B.unitypackage --run --verify
+
+--verify runs tools/checks/verify_output.gd after every stage, which is what
+makes a regression visible: the question in the integration case is not whether
+the last package imported, it is whether the earlier ones still hold up.
+
+By default the project is created next to the first package under a directory
+named after it. The Unidot revision used is recorded in the project directory so
+a report can state what it was produced with.
 
 Re-running with --clean wipes the previous import (the output tree, the asset
 database and Godot's own .godot cache) but keeps the project, which is the
@@ -18,6 +32,7 @@ correct reset: deleting only the output tree leaves stale artifacts in .godot
 that will skew the next run.
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -166,25 +181,69 @@ def clean_import(project_dir: str) -> None:
 			shutil.rmtree(target)
 		elif os.path.exists(target):
 			os.remove(target)
+	for stale in sorted(glob.glob(os.path.join(project_dir, "import.*.log"))):
+		os.remove(stale)
+
+
+def run_import(godot: str, project_dir: str, package_path: str, log_path: str) -> int:
+	"""Import one package into an already-scaffolded project."""
+	write_bootstrap(project_dir, package_path)
+	with open(log_path, "w") as log:
+		result = subprocess.run(
+			[godot, "--headless", "--editor", "."],
+			cwd=project_dir, stdout=log, stderr=subprocess.STDOUT,
+		)
+	if result.returncode != 0:
+		print("Godot exited with " + str(result.returncode) + "; see " + log_path, file=sys.stderr)
+		return result.returncode
+	with open(log_path, errors="ignore") as log:
+		text = log.read()
+	if "AUTO_IMPORT_BOOTSTRAP: import finished" not in text:
+		print("Import did not report completion; see " + log_path, file=sys.stderr)
+		return 1
+	print("  engine ERROR lines:     " + str(text.count("\nERROR:")))
+	print("  case-mismatch warnings: " + str(text.count("Case mismatch")))
+	return 0
+
+
+def run_verify(godot: str, project_dir: str, log_path: str) -> int:
+	"""Run the vendor-neutral correctness pass over whatever is in the project."""
+	script = "addons/unidot_importer/tools/checks/verify_output.gd"
+	with open(log_path, "w") as log:
+		result = subprocess.run(
+			[godot, "--headless", "--path", ".", "-s", script],
+			cwd=project_dir, stdout=log, stderr=subprocess.STDOUT,
+		)
+	with open(log_path, errors="ignore") as log:
+		text = log.read()
+	verdict = "PASS" if "\nRESULT: PASS" in text else "FAIL"
+	print("  verify: " + verdict + "  (" + os.path.basename(log_path) + ")")
+	for line in text.splitlines():
+		if line.startswith("  ") and line.strip():
+			print("  " + line)
+	return 0 if verdict == "PASS" else result.returncode or 1
 
 
 def main() -> int:
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-	parser.add_argument("package", help="path to the .unitypackage to validate")
-	parser.add_argument("--name", help="project directory name (default: derived from the package filename)")
-	parser.add_argument("--root", help="where to create the project (default: alongside the package)")
+	parser.add_argument("packages", nargs="+", help="path(s) to the .unitypackage to validate; several are imported into one project in the order given")
+	parser.add_argument("--name", help="project directory name (default: derived from the package filenames)")
+	parser.add_argument("--root", help="where to create the project (default: alongside the first package)")
 	parser.add_argument("--godot", default=os.environ.get("GODOT", DEFAULT_GODOT), help="Godot binary (default: $GODOT or the macOS app path)")
 	parser.add_argument("--clean", action="store_true", help="wipe a previous import before running")
 	parser.add_argument("--run", action="store_true", help="run the headless import after scaffolding")
+	parser.add_argument("--verify", action="store_true", help="run checks/verify_output.gd after every stage, to catch a later package breaking an earlier one")
 	args = parser.parse_args()
 
-	package_path = os.path.abspath(os.path.expanduser(args.package))
-	if not os.path.isfile(package_path):
-		print("No such package: " + package_path, file=sys.stderr)
-		return 1
+	package_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.packages]
+	for p in package_paths:
+		if not os.path.isfile(p):
+			print("No such package: " + p, file=sys.stderr)
+			return 1
 
-	name = args.name or slugify(os.path.basename(package_path).rsplit(".unitypackage", 1)[0])
-	root = os.path.abspath(os.path.expanduser(args.root)) if args.root else os.path.dirname(package_path)
+	slugs = [slugify(os.path.basename(p).rsplit(".unitypackage", 1)[0]) for p in package_paths]
+	name = args.name or "_then_".join(slugs)
+	root = os.path.abspath(os.path.expanduser(args.root)) if args.root else os.path.dirname(package_paths[0])
 	project_dir = os.path.join(root, name + "_validate")
 
 	os.makedirs(project_dir, exist_ok=True)
@@ -192,52 +251,59 @@ def main() -> int:
 	with open(os.path.join(project_dir, "project.godot"), "w") as f:
 		f.write(PROJECT_GODOT.format(name=name, features=features))
 	sync_addon(project_dir)
-	write_bootstrap(project_dir, package_path)
+	write_bootstrap(project_dir, package_paths[0])
 
 	revision = unidot_revision()
 	with open(os.path.join(project_dir, "validation_context.json"), "w") as f:
-		json.dump({"package": package_path, "unidot_revision": revision, "output_root": OUTPUT_ROOT}, f, indent=2)
+		json.dump({
+			"package": package_paths[0],
+			"packages": package_paths,
+			"unidot_revision": revision,
+			"output_root": OUTPUT_ROOT,
+		}, f, indent=2)
 		f.write("\n")
 
 	print("project:  " + project_dir)
-	print("package:  " + package_path)
+	for i, p in enumerate(package_paths, 1):
+		print("package %d: %s" % (i, p))
 	print("unidot:   " + revision)
 	if revision.endswith("-dirty"):
 		print("warning:  the checkout has uncommitted changes; this run is not reproducible")
 
 	if args.clean:
 		clean_import(project_dir)
-		print("cleaned:  Unidot/, .godot/, unidot_asset_database.res")
+		print("cleaned:  Unidot/, .godot/, unidot_asset_database.res, import.*.log")
 
 	if not args.run:
 		print("\nTo import:")
-		print('  cd "%s" && "%s" --headless --editor . > import.log 2>&1' % (project_dir, args.godot))
+		for i, p in enumerate(package_paths, 1):
+			print("  # stage %d: %s" % (i, os.path.basename(p)))
+			print('  cd "%s" && "%s" --headless --editor . > import.%d.log 2>&1' % (project_dir, args.godot, i))
+		if len(package_paths) > 1:
+			print("  # each stage needs its own bootstrap; use --run rather than doing this by hand")
 		return 0
 
 	if not os.path.exists(args.godot):
 		print("No Godot binary at " + args.godot + " (set --godot or $GODOT)", file=sys.stderr)
 		return 1
 
-	log_path = os.path.join(project_dir, "import.log")
-	print("\nimporting, this takes a while; log -> " + log_path)
-	with open(log_path, "w") as log:
-		result = subprocess.run(
-			[args.godot, "--headless", "--editor", "."],
-			cwd=project_dir, stdout=log, stderr=subprocess.STDOUT,
-		)
-	if result.returncode != 0:
-		print("Godot exited with " + str(result.returncode) + "; see " + log_path, file=sys.stderr)
-		return result.returncode
+	failures = 0
+	for i, p in enumerate(package_paths, 1):
+		log_path = os.path.join(project_dir, "import.%d.log" % i)
+		print("\n=== stage %d/%d: %s" % (i, len(package_paths), os.path.basename(p)))
+		print("importing, this takes a while; log -> " + log_path)
+		rc = run_import(args.godot, project_dir, p, log_path)
+		if rc != 0:
+			return rc
+		if args.verify:
+			# After every stage, not just the last: the integration question is
+			# whether the packages imported earlier still hold up.
+			failures += 1 if run_verify(args.godot, project_dir, os.path.join(project_dir, "verify.%d.log" % i)) else 0
 
-	with open(log_path, errors="ignore") as log:
-		text = log.read()
-	if "AUTO_IMPORT_BOOTSTRAP: import finished" not in text:
-		print("Import did not report completion; see " + log_path, file=sys.stderr)
-		return 1
-	print("import finished")
-	print("  engine ERROR lines:    " + str(text.count("\nERROR:")))
-	print("  case-mismatch warnings:" + str(text.count("Case mismatch")))
 	print("\nOutput tree: " + os.path.join(project_dir, "Unidot"))
+	if args.verify and failures:
+		print("verify FAILED after %d of %d stages" % (failures, len(package_paths)))
+		return 1
 	return 0
 
 

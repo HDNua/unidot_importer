@@ -7,6 +7,10 @@ reports carry the figures for a specific package.
 - [Synty POLYGON - Prototype Pack](./polygon-prototype.md)
 - [Synty POLYGON - Starter Pack](./polygon-starter.md)
 
+Plus one report that is not about a package but about combining them:
+
+- [Several packages in one project](./multi-package.md)
+
 Reports are written in English only. Their figures change with every import run,
 and keeping two translations of them in step is not worth the drift.
 
@@ -47,4 +51,12 @@ packages stay comparable, and say which side a figure belongs to.
 Importing several packages into one project is a separate scenario worth testing
 deliberately, since that is what a real project does and it is the only case
 where GUID overlap between packages is exercised. Keep it out of the per-package
-measurements.
+measurements — it has its own report in
+[multi-package.md](./multi-package.md).
+
+Before running one, `tools/checks/package_overlap.py` will tell you from the
+archives alone which assets the packages disagree about:
+
+```bash
+tools/checks/package_overlap.py "~/art/A.unitypackage" "~/art/B.unitypackage"
+```

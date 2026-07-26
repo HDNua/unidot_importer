@@ -193,6 +193,16 @@ Each package is validated in its own throwaway project, scaffolded by
 [docs/packages/](./docs/packages/README.md) for how a report is produced and
 what it should separate.
 
+Importing several packages into one project is a separate, order-dependent case:
+where two packages ship the same Unity GUID with different content, the one
+imported last replaces the file, and content converted from the earlier package
+that referenced a part the replacement lacks is left incomplete. This is a
+property of the packages, not of Unidot, and there is nothing in the archives
+that says which version is intended. `tools/checks/package_overlap.py` reports
+what will contend before you import, and
+[Several packages in one project](./docs/packages/multi-package.md) records a
+measured case.
+
 `△ Partial` means the package has a validated usable subset, but the import is
 not lossless and still requires review or manual porting for the gaps below. The
 status stays `△` because ShaderGraph content is not translated at all — not

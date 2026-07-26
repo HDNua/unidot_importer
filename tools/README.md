@@ -13,8 +13,8 @@ tools/
 
 ## `validate_package.py`
 
-Creates a throwaway Godot project for one package, syncs this checkout into it
-as `addons/unidot_importer`, and optionally runs the import headlessly.
+Creates a throwaway Godot project, syncs this checkout into it as
+`addons/unidot_importer`, and optionally runs the import headlessly.
 
 ```bash
 tools/validate_package.py "~/art/Some Pack.unitypackage" --run
@@ -22,6 +22,19 @@ tools/validate_package.py "~/art/Some Pack.unitypackage" --run
 
 See [docs/packages/](../docs/packages/README.md) for why each package needs its
 own project and what a report should record.
+
+Given several packages it imports them into one project in the order given, one
+stage per package, with its own `import.<n>.log`. That is the integration case,
+not a way to measure a package — figures from a shared project cannot be
+attributed to one of them.
+
+```bash
+tools/validate_package.py A.unitypackage B.unitypackage --run --verify
+```
+
+`--verify` runs `checks/verify_output.gd` after *every* stage rather than at the
+end. That is the whole point: the integration question is not whether the last
+package imported, it is whether the earlier ones survived it.
 
 ## `checks/`
 
@@ -31,7 +44,26 @@ who made the package.
 - `import_report.py <project_dir>` — summarizes an import: engine diagnostics
   (dead texture references embedded in the source FBX files, case mismatches,
   missing GUID dependencies), Unidot's own warnings grouped by class, and an
-  inventory of what was produced. `--json` for machine-readable output.
+  inventory of what was produced. `--stage N` restricts it to one stage of a
+  multi-package project; `--json` for machine-readable output.
+
+- `verify_output.gd <project>` — correctness pass over the output tree: every
+  scene loads and instantiates, every node a scene declares still exists after
+  instantiation, every `MeshInstance3D` has a mesh, converted materials that
+  should carry a texture do, and every skinned mesh in a prefab deforms rigidly.
+  GDScript rather than Python so it reads the resources directly instead of
+  parsing `.tscn` text, which means it also works on binary output.
+
+  ```bash
+  Godot --headless --path <project> -s addons/unidot_importer/tools/checks/verify_output.gd
+  ```
+
+- `package_overlap.py A.unitypackage B.unitypackage [...]` — static comparison,
+  no Godot and no import. Reports GUIDs carried by more than one package, split
+  into identical (benign) and conflicting (the last import wins), plus pathname
+  collisions between different GUIDs. Run it before an integration import: it
+  predicts what will contend, and conflicting *models* are called out separately
+  because other assets reference sub-objects inside them by file ID.
 
 ## `publishers/`
 

@@ -5,12 +5,21 @@ extends SceneTree
 #
 #   Godot --headless -s addons/unidot_importer/tools/checks/verify_output.gd
 #
-# Answers three questions that do not depend on who made the package:
+# Answers four questions that do not depend on who made the package:
 #   1. Does every generated scene load and instantiate?
-#   2. Does every converted material that should have a texture have one?
-#   3. Does every skinned mesh deform rigidly in its rest pose?
+#   2. Does every node a scene declares still exist after instantiation?
+#   3. Does every MeshInstance3D actually have a mesh?
+#   4. Does every skinned mesh in a prefab deform rigidly?
 #
-# (3) is the general form of the check: for a mesh posed at rest, the skinning
+# (2) exists because a scene can load perfectly while missing a piece. A
+# converted prefab is usually an inherited scene storing only overrides against
+# a base scene generated from a model; if a later import replaces that model
+# with a build that no longer has a node, Godot drops the override, warns, and
+# hands back a scene that instantiates cleanly with the node gone. Nothing that
+# enumerates what is present can see that, so this compares each scene against
+# its own SceneState instead.
+#
+# (4) is the general form of the check: in a prefab's default state the skinning
 # transform D = global_bone_pose * bind_pose must be the identity, or the mesh
 # is already distorted before any animation plays. It needs no knowledge of
 # which prefabs matter, only of which ones have a Skin.
@@ -31,6 +40,10 @@ var skins_checked := 0
 var skin_failures: Array[String] = []
 var prefabs_with_skin := 0
 var posed_scenes_skipped := 0
+var mesh_nodes_checked := 0
+var meshless_nodes: Array[String] = []
+var declared_nodes_checked := 0
+var vanished_nodes: Array[String] = []
 
 
 func _init() -> void:
@@ -47,6 +60,16 @@ func _init() -> void:
 	print("  loaded and instantiated  %d/%d" % [scenes_ok, len(scene_paths)])
 	for f in scenes_failed.slice(0, 10):
 		print("    FAIL ", f)
+	print("=== nodes each scene declares")
+	print("  declared node paths      %d" % declared_nodes_checked)
+	print("  missing after instancing %d" % len(vanished_nodes))
+	for v in vanished_nodes.slice(0, 20):
+		print("    ", v)
+	print("=== mesh nodes")
+	print("  MeshInstance3D nodes     %d" % mesh_nodes_checked)
+	print("  with no mesh             %d" % len(meshless_nodes))
+	for m in meshless_nodes.slice(0, 20):
+		print("    ", m)
 	print("=== materials converted from Unity .mat assets")
 	print("  with a texture bound     %d/%d" % [materials_textured, materials_total])
 	print("  without any texture      %d" % len(materials_untextured))
@@ -62,7 +85,8 @@ func _init() -> void:
 	for f in skin_failures.slice(0, 20):
 		print("    ", f)
 
-	var ok: bool = scenes_failed.is_empty() and skin_failures.is_empty()
+	var ok: bool = (scenes_failed.is_empty() and skin_failures.is_empty()
+		and meshless_nodes.is_empty() and vanished_nodes.is_empty())
 	print("\nRESULT: ", "PASS" if ok else "FAIL")
 	quit(0 if ok else 1)
 
@@ -91,6 +115,10 @@ func _check_scene(path: String) -> void:
 		scenes_failed.append(path + " (instantiate failed)")
 		return
 	scenes_ok += 1
+	# These two hold for anything that loaded, unlike the rigidity check below.
+	_check_declared_nodes(ps, inst, path)
+	if inst is Node3D:
+		_check_meshes(inst, path)
 	# Rigidity assumes the rest pose. An authored scene converted from a .unity
 	# file deliberately poses its characters, so D is not expected to be the
 	# identity there; only a prefab's default state carries that guarantee.
@@ -106,6 +134,23 @@ func _check_scene(path: String) -> void:
 
 func _is_prefab(path: String) -> bool:
 	return path.contains(".prefab.")
+
+
+func _check_declared_nodes(ps: PackedScene, inst: Node, scene_path: String) -> void:
+	var state: SceneState = ps.get_state()
+	for i in range(state.get_node_count()):
+		var np: NodePath = state.get_node_path(i)
+		declared_nodes_checked += 1
+		if inst.get_node_or_null(np) == null:
+			vanished_nodes.append("%s: declares '%s', absent after instantiation" % [scene_path.get_file(), str(np)])
+
+
+func _check_meshes(scene_root: Node, scene_path: String) -> void:
+	for node in scene_root.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = node
+		mesh_nodes_checked += 1
+		if mi.mesh == null:
+			meshless_nodes.append("%s / %s" % [scene_path.get_file(), mi.name])
 
 
 func _check_material(path: String) -> void:

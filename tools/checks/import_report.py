@@ -14,6 +14,7 @@ import.log, validation_context.json and the Unidot/ output tree.
 """
 import argparse
 import collections
+import glob
 import json
 import os
 import re
@@ -37,6 +38,20 @@ def classify(message: str) -> str:
 		if pattern.search(message):
 			return name
 	return "other"
+
+
+def stage_logs(project_dir: str) -> list:
+	"""Import logs for the project, oldest stage first.
+
+	A single-package project has one import.log; a multi-package one has
+	import.<n>.log per stage, and the stage matters — a diagnostic raised while
+	the second package was landing is not a fact about the first.
+	"""
+	single = os.path.join(project_dir, "import.log")
+	if os.path.isfile(single):
+		return [single]
+	staged = glob.glob(os.path.join(project_dir, "import.*.log"))
+	return sorted(staged, key=lambda p: int(re.search(r"import\.(\d+)\.log$", p).group(1)))
 
 
 def read_log(path: str) -> str:
@@ -96,14 +111,20 @@ def main() -> int:
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("project_dir", help="a project produced by tools/validate_package.py")
 	parser.add_argument("--json", action="store_true", help="emit JSON instead of a text summary")
+	parser.add_argument("--stage", type=int, help="report only stage N of a multi-package project (1-based)")
 	args = parser.parse_args()
 
 	project_dir = os.path.abspath(os.path.expanduser(args.project_dir))
-	log_path = os.path.join(project_dir, "import.log")
-	if not os.path.isfile(log_path):
-		print("No import.log in " + project_dir, file=sys.stderr)
+	logs = stage_logs(project_dir)
+	if not logs:
+		print("No import log in " + project_dir, file=sys.stderr)
 		return 1
-	log = read_log(log_path)
+	if args.stage is not None:
+		if not 1 <= args.stage <= len(logs):
+			print("No stage %d; the project has %d" % (args.stage, len(logs)), file=sys.stderr)
+			return 1
+		logs = [logs[args.stage - 1]]
+	log = "\n".join(read_log(p) for p in logs)
 
 	context = {}
 	context_path = os.path.join(project_dir, "validation_context.json")
@@ -113,6 +134,7 @@ def main() -> int:
 
 	report = {
 		"context": context,
+		"stages": [os.path.basename(p) for p in logs],
 		"import_completed": "AUTO_IMPORT_BOOTSTRAP: import finished" in log,
 		"engine": engine_diagnostics(log),
 		"unidot": unidot_diagnostics(log),
@@ -124,9 +146,15 @@ def main() -> int:
 		sys.stdout.write("\n")
 		return 0
 
-	print("package:  " + str(context.get("package", "?")))
+	packages = context.get("packages") or [context.get("package", "?")]
+	for i, p in enumerate(packages, 1):
+		print("package %d: %s" % (i, p))
 	print("unidot:   " + str(context.get("unidot_revision", "?")))
+	print("stages:   " + ", ".join(report["stages"]))
 	print("finished: " + ("yes" if report["import_completed"] else "NO"))
+	if len(packages) > 1 and args.stage is None:
+		print("\nNote: figures below cover every stage together. They describe the")
+		print("combined project, not any one package. Use --stage N for one stage.")
 	e = report["engine"]
 	print("\nEngine-level diagnostics")
 	print("  ERROR lines                 %d" % e["error_lines"])
