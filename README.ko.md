@@ -52,6 +52,10 @@ Godot 에디터 설정에서 FBX Import를 구성한 뒤 사용하세요.
 | --- | --- | --- | :---: | --- |
 | Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ 부분 지원 | [상세](./docs/packages/polygon-prototype.md) |
 
+각 패키지는 `tools/validate_package.py`가 만들어주는 일회용 프로젝트에서 따로
+검증합니다. 리포트 작성 방법과 무엇을 분리해야 하는지는
+[docs/packages/](./docs/packages/README.md)에 있습니다.
+
 `△ 부분 지원`은 검증된 사용 가능 부분집합이 존재하지만 임포트가 무손실은 아니며,
 아래 격차에 대해서는 검토나 수동 이식이 필요하다는 뜻입니다. 상태가 `△`로 남는 이유는
 ShaderGraph 콘텐츠가 아예 번역되지 않기 때문이지, 변환된 지오메트리가 미덥지 못해서가

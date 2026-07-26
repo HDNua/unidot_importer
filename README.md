@@ -187,6 +187,11 @@ Special Thanks to
 | --- | --- | --- | :---: | --- |
 | Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-prototype.md) |
 
+Each package is validated in its own throwaway project, scaffolded by
+`tools/validate_package.py`. See
+[docs/packages/](./docs/packages/README.md) for how a report is produced and
+what it should separate.
+
 `△ Partial` means the package has a validated usable subset, but the import is
 not lossless and still requires review or manual porting for the gaps below. The
 status stays `△` because ShaderGraph content is not translated at all — not
