@@ -1365,6 +1365,18 @@ class FbxHandler:
 		#pkgasset.log_debug("Looking in directories " + str(retlist))
 		return retlist
 
+	# A case-insensitive filesystem accepts aliases such as "textures" for a
+	# package path stored as "Textures". Prefer the package's canonical spelling
+	# before probing the filesystem so serialized resource paths remain portable.
+	static func resolve_texture_candidate(candidate_texture_dict: Dictionary, package_output_paths: Dictionary, file_exists: Callable) -> String:
+		for candidate_fn in candidate_texture_dict:
+			if package_output_paths.has(candidate_fn):
+				return String(candidate_texture_dict[candidate_fn])
+		for candidate_fn in candidate_texture_dict:
+			if bool(file_exists.call(candidate_fn)):
+				return String(candidate_texture_dict[candidate_fn])
+		return ""
+
 	func _make_relative_to(filename: String, basedir: String):
 		var path_beginning: String = ""
 		if basedir.begins_with("res://"):
@@ -1484,8 +1496,8 @@ class FbxHandler:
 				var tmpf = FileAccess.open(texture_dirname + "/" + fn, FileAccess.WRITE_READ)
 				tmpf.close()
 				tmpf = null
-			var candidate_texture_dict = _get_parent_textures_paths(output_dirname + "/" + unique_texture_map[fn])
-			var tex_exists: bool = false
+			var candidate_texture_dict: Dictionary = _get_parent_textures_paths(output_dirname + "/" + unique_texture_map[fn])
+			var eligible_candidate_texture_dict: Dictionary = {}
 			for candidate_fn in candidate_texture_dict:
 				if (
 					not pkgasset.packagefile.output_root.is_empty()
@@ -1493,11 +1505,16 @@ class FbxHandler:
 					and not candidate_fn.begins_with(pkgasset.packagefile.output_root + "/")
 				):
 					continue
-				#pkgasset.log_debug("candidate " + str(candidate_fn) + " INPKG=" + str(pkgasset.packagefile.path_to_pkgasset.has(candidate_fn)) + " FILEEXIST=" + str(d.file_exists(candidate_fn)))
-				if pkgasset.packagefile.output_path_to_pkgasset.has(candidate_fn) or file_exists_hack(d, candidate_fn):
-					unique_texture_map[fn] = candidate_texture_dict[candidate_fn]
-					tex_exists = true
-					break
+				eligible_candidate_texture_dict[candidate_fn] = candidate_texture_dict[candidate_fn]
+			var tex_exists: bool = false
+			var resolved_texture_path: String = resolve_texture_candidate(
+				eligible_candidate_texture_dict,
+				pkgasset.packagefile.output_path_to_pkgasset,
+				func(candidate_fn: String) -> bool: return file_exists_hack(d, candidate_fn)
+			)
+			if not resolved_texture_path.is_empty():
+				unique_texture_map[fn] = resolved_texture_path
+				tex_exists = true
 			if not tex_exists:
 				tex_not_exists[fn] = ""
 		if not tex_not_exists.is_empty():
