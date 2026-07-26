@@ -49,14 +49,16 @@ who made the package.
 
 - `verify_output.gd <project>` — correctness pass over the output tree: every
   scene loads and instantiates, every node a scene declares still exists after
-  instantiation, every `MeshInstance3D` has a mesh, converted materials that
-  should carry a texture do, and every skinned mesh in a prefab deforms rigidly.
-  GDScript rather than Python so it reads the resources directly instead of
-  parsing `.tscn` text, which means it also works on binary output.
+  instantiation, and every `MeshInstance3D` has a mesh. Also reports how many
+  converted materials bind a texture, without a verdict. GDScript rather than
+  Python so it reads the resources directly instead of parsing `.tscn` text,
+  which means it also works on binary output.
 
   ```bash
   Godot --headless --path <project> -s addons/unidot_importer/tools/checks/verify_output.gd
   ```
+
+  It deliberately does **not** check skin deformation. See below.
 
 - `package_overlap.py A.unitypackage B.unitypackage [...]` — static comparison,
   no Godot and no import. Reports GUIDs carried by more than one package, split
@@ -83,6 +85,24 @@ worth keeping.
 
   Requires the converted scenes as text (`.tscn`). It parses them rather than
   loading them, so it runs without Godot.
+
+- `synty/polygon-prototype/gate_fps_arms.gd` — the same subject in GDScript, so
+  it also works on the binary `.scn` output that `validate_package.py` produces.
+
+### Why the skinning gate is here and not in `checks/`
+
+It looks vendor-neutral and is not. The test — `D = global_bone_pose * bind_pose`
+must be the identity — only holds when the skeleton sits at the pose its meshes
+were bound in, and there is no way to establish that independently, because the
+identity *is* the test. A prefab authored in any other pose fails it while
+rendering perfectly.
+
+Measured on POLYGON Prototype: the eight FPS arm prefabs satisfy the identity on
+every bind, while the `39` PolygonGeneric character prefabs in the same project
+miss it on `22,737` binds and render correctly anyway — they are simply not
+stored at their bind pose. Rendering them confirmed it. Knowing which prefabs
+are at bind pose is knowledge about how a publisher authors a pack, which is
+exactly the kind of thing this directory is for.
 
 New publishers get a sibling directory. Nothing in `checks/` may import from
 `publishers/`.

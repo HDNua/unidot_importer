@@ -95,21 +95,39 @@ positives across `1,693` scenes.
 The recurring shape is a check that enumerates what exists and asserts something
 about each item: absence is invisible to it.
 
-## Open: bone/skin failures on the PolygonGeneric character prefabs
+## What this run also settled: the skinning check was not vendor-neutral
 
-Running the checker over this project also put it over content no gate had
-covered before, and it reports `22,737` bone/skin failures on the `39`
+Running this comparison put `tools/checks/verify_output.gd` over content no gate
+had covered before, and it reported `22,737` bone/skin failures on the `39`
 PolygonGeneric character prefabs — a constant `115.17°` across whole bone
-chains. These are **not** an integration finding: they are identical before and
-after the second package, come from a Prototype-only project, and reproduce with
-the unmodified checker at revision `69bd28a`.
+chains, which is the signature of the Root-hijack defect fixed for the FPS arms.
 
-No prior gate covered these prefabs. The Prototype report's `3,600` checks come
-from a gate written for the `8` FPS arm prefabs, and the Starter report's `200`
-come from that pack's `4` skinned prefabs. In the same combined project the FPS
-arm prefabs still pass every one of their checks.
+It was a false alarm. **The characters render correctly.** Rendering
+`SM_Gen_Chr_Business_Female_01` and `SM_Gen_Chr_Peasent_Male_01` from this
+project shows clean, undistorted T-poses with correct proportions and materials.
 
-Whether this is a defect or a limit of the check is **not established** here.
+Four candidate mechanisms were measured and rejected: stale skeleton poses
+before the first frame (identical results after), binds with no vertex weight
+(weighted binds fail too), bind-to-bone resolution picking the wrong bone of a
+duplicated name (index and name agree on all `1,150`), and an uncompensated mesh
+transform (identity). What remains is the check's own precondition. The identity
+`D = global_bone_pose * bind_pose = I` holds only when the skeleton sits at the
+pose its meshes were bound in; these prefabs are deliberately stored in another
+pose, so they miss the identity and render correctly, which is what skinning
+does. The FPS arm prefabs happen to sit at bind pose, which is why the same test
+is meaningful for them.
+
+That precondition cannot be tested independently — the identity *is* the test.
+So the check needs outside knowledge of how a publisher authors prefabs, which
+makes it a publisher gate wearing a vendor-neutral costume, precisely the thing
+[tools/README.md](../../tools/README.md) warns against. It has been moved to
+`tools/publishers/synty/polygon-prototype/gate_fps_arms.gd`, and
+`verify_output.gd` no longer asserts anything about skinning.
+
+Counting this, three checks in this repository have now reported something other
+than reality: the skeleton lookup that found no skins and passed, the posed
+authored scenes that failed, and this one. All three share a shape — a check
+that is confident about a precondition it never measured.
 
 ## Recommendation
 
