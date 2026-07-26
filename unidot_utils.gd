@@ -1,13 +1,24 @@
 extends RefCounted
 
-var ep = EditorPlugin.new()
-var editor_interface = ep.get_editor_interface()
-var editor_filesystem = editor_interface.get_resource_filesystem()
+var ep: EditorPlugin
+var editor_interface: EditorInterface
+var editor_filesystem: EditorFileSystem
 
 func _init():
-	ep.queue_free()
+	# AssetMeta and ObjectAdapter are also useful to read persisted conversion
+	# state from a plain headless process.  Instantiating EditorPlugin eagerly
+	# made merely loading either class fail outside editor context.
+	if Engine.is_editor_hint():
+		ep = EditorPlugin.new()
+		editor_interface = ep.get_editor_interface()
+		editor_filesystem = editor_interface.get_resource_filesystem()
+		ep.queue_free()
 
 func save_resource(created_res: Resource, new_pathname: String):
+	assert(editor_filesystem != null,
+		"Unidot resource saving requires Godot editor context")
+	if editor_filesystem == null:
+		return
 	var existed: bool = FileAccess.file_exists(new_pathname)
 	if not new_pathname.begins_with("res://"):
 		new_pathname = "res://" + new_pathname
