@@ -426,6 +426,22 @@ The active-state validation above covers the package's serialized base
 GameObject and renderer states; arbitrary prefab overrides that toggle active
 state are not yet covered by this package fixture.
 
+One diagnostic is a genuine defect that Unidot cannot correct. Godot's FBX
+importer resolves an embedded texture reference by probing candidate
+directories, and one of those probes is a lowercase `textures/`. On a
+case-insensitive filesystem that probe opens a file stored as `Textures/`,
+Godot warns about the case mismatch, and the requested spelling is what gets
+written into the extracted mesh. In this package that affects exactly one
+texture (`Generic_Road_01.png`) across `23` files under `Models/extracted/`,
+which would fail to load if the project were exported to a case-sensitive
+filesystem. The converted `.mat` resources are unaffected, so prefabs and
+scenes render correctly. Unidot cannot repair the stored reference from its
+post-import script: it writes those `.mesh` files, but Godot's own
+`save_to_file` subresource extraction rewrites the same paths afterwards, so
+any correction made during post-import is overwritten. Fixing it properly
+requires a change in the engine's texture probe or in how the model `.import`
+configuration extracts meshes.
+
 The red error counter in the Unidot log is a count of diagnostic messages, not
 a count of unique failed files or failed scenes. A scene can load successfully
 while an unsupported component or override inside it was skipped. In
