@@ -65,7 +65,17 @@ who made the package.
   into identical (benign) and conflicting (the last import wins), plus pathname
   collisions between different GUIDs. Run it before an integration import: it
   predicts what will contend, and conflicting *models* are called out separately
-  because other assets reference sub-objects inside them by file ID.
+  because other assets reference sub-objects inside them by file ID. For each
+  conflicting model build, a second pass groups the file IDs referenced by its
+  accompanying text assets and reports both replacement directions, including
+  the candidate consumer assets and their package provenance. `--json` retains
+  file IDs as decimal strings so signed 64-bit values stay exact.
+
+  The directional result is deliberately a **consumer-reference heuristic**.
+  It does not inspect the replacement model's sub-object inventory: a file ID
+  observed only in one side's consumers is a review candidate, not proof that
+  the other model lacks it. An empty difference likewise does not establish
+  compatibility, a lossless import order, or a superset relationship.
 
 ## `publishers/`
 
