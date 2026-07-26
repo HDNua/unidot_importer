@@ -277,6 +277,12 @@ indicate a failed or incorrect conversion of POLYGON Prototype.** They were
 classified message-by-message from an instrumented full import at revision
 `b60759d`. The summary below is that classification.
 
+![The Unidot import dialog after a full POLYGON Prototype import, reporting 124 warnings and 13 errors alongside "Import complete."](./hdnua_import_dialog.png)
+
+*What a successful import of this package looks like: `Import complete.` with
+`124` warnings and `13` errors still on the counters. The rest of this section
+accounts for every one of them.*
+
 **The thousands of red `ERROR` lines in the Godot console are dead texture
 paths baked into the vendor's FBX files.** The Synty artists exported the FBX
 files with their own working textures still assigned — `.psd`, `.tif`, and
