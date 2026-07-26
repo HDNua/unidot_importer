@@ -4,5 +4,7 @@ unity_asset_database.*res
 static_cache.*res
 static_storage.*res
 
-# AI session transcripts are working notes, never published from this repo.
-0_ai/2_chat/
+# AI working notes — session transcripts, plans, scratch. Never published from
+# this repo: they quote private paths and downstream context verbatim, and the
+# repo is a public fork.
+0_ai/
