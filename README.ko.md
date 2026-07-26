@@ -51,6 +51,7 @@ Godot 에디터 설정에서 FBX Import를 구성한 뒤 사용하세요.
 | 퍼블리셔 | 패키지 | 검증 환경 | 지원 | 리포트 |
 | --- | --- | --- | :---: | --- |
 | Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ 부분 지원 | [상세](./docs/packages/polygon-prototype.md) |
+| Synty Studios | POLYGON - Starter Pack | Godot `4.7.1-stable.mono`, macOS | △ 부분 지원 | [상세](./docs/packages/polygon-starter.md) |
 
 각 패키지는 `tools/validate_package.py`가 만들어주는 일회용 프로젝트에서 따로
 검증합니다. 리포트 작성 방법과 무엇을 분리해야 하는지는

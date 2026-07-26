@@ -5,6 +5,7 @@ One file per `.unitypackage` that has been validated against this fork. The main
 reports carry the figures for a specific package.
 
 - [Synty POLYGON - Prototype Pack](./polygon-prototype.md)
+- [Synty POLYGON - Starter Pack](./polygon-starter.md)
 
 Reports are written in English only. Their figures change with every import run,
 and keeping two translations of them in step is not worth the drift.

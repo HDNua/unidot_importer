@@ -186,6 +186,7 @@ Special Thanks to
 | Publisher | Package | Tested with | Support | Report |
 | --- | --- | --- | :---: | --- |
 | Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-prototype.md) |
+| Synty Studios | POLYGON - Starter Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-starter.md) |
 
 Each package is validated in its own throwaway project, scaffolded by
 `tools/validate_package.py`. See
