@@ -77,6 +77,54 @@ who made the package.
   the other model lacks it. An empty difference likewise does not establish
   compatibility, a lossless import order, or a superset relationship.
 
+- `unity_source_pose_gate.py PACKAGE PROJECT [--godot PATH] [--json]` — compares
+  every bone pose in every converted skin-bearing prefab with its source-side
+  baseline from the original Unity package and persisted conversion artifacts.
+  The Python front end extracts only the source records needed for the
+  comparison, then runs the
+  GDScript worker in the converted Godot project. It prints the discovered and
+  checked prefab counts, compared-bone counts, tolerances, largest observed
+  errors, and any prefab/bone mismatches. A run also perturbs one compared bone
+  in memory and requires the worker to detect it before reporting `PASS`, so an
+  implementation that silently compares nothing cannot pass.
+
+  ```bash
+  python3 tools/checks/unity_source_pose_gate.py \
+    "Some Pack.unitypackage" /path/to/converted-project
+  ```
+
+  This is a **source-consistency** gate, not an independent Unity rendering
+  oracle. The direct branch compares authored prefab transforms after reusing
+  Unidot's YAML parser and coordinate conversion, so defects shared by those
+  components may be invisible. For FBX-backed prefab instances with no bone
+  TRS overrides, the weaker branch separately instantiates both the persisted
+  source-model scene and the final prefab. Saved AssetMeta supplies the exact
+  fileID-to-nodepath-to-bone mapping; its original/delta data is used only for
+  a rotation-consistency check, not as a numeric position oracle. The exact,
+  uniquely resolved final bone names in the persisted active humanoid map
+  (auto-detected first, authored fallback) define the required subset. Every
+  other mapped bone with a saved original is cross-checked too; only
+  non-required bones without one are reported as composition-only. Required
+  and completed counts must agree, and total checks plus composition-only bones
+  must equal all FBX bones. Model-level defects in FBX decoding,
+  humanoid mapping, or delta generation can therefore be shared by both sides
+  and remain invisible. Other inherited forms fail closed instead of being
+  guessed at. Both the persisted source-model scene and final prefab must have
+  a fully explained bone inventory.
+
+  Synthetic identity roots in the direct branch are accepted only when their
+  matched topology agrees with both persisted parent data and the independent
+  authored `SkinnedMeshRenderer.m_Bones`/nonzero `m_RootBone` inventory. Every
+  authored weighted `m_Bones` Transform must also be compared exactly once.
+  FBX source YAML has no such bone inventory, so its corresponding proof must
+  trust the persisted fileID/parent map; corruption that removes an authored
+  root from that same map can remain invisible.
+
+  The original `.unitypackage` and converted project are both required, and
+  the checkout under `addons/unidot_importer` in that project must be current.
+  The worker uses plain headless mode: it does not enable editor plugins or
+  write project files.
+
 ## `publishers/`
 
 Everything else. A check lands here when it depends on knowing which prefabs
@@ -98,6 +146,12 @@ worth keeping.
 
 - `synty/polygon-prototype/gate_fps_arms.gd` — the same subject in GDScript, so
   it also works on the binary `.scn` output that `validate_package.py` produces.
+
+The vendor-neutral source-pose gate above does not replace these two FPS-arm
+gates. It accepts any authored pose and checks conversion consistency, while
+the FPS gates deliberately assert the stronger bind-pose rigidity property for
+eight known prefabs. That narrower regression caught the historical humanoid
+Root-hijacking defect, so it remains in place.
 
 ### Why the skinning gate is here and not in `checks/`
 

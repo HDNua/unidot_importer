@@ -17,7 +17,7 @@ Figures below are from importer revision `b60759d` unless noted.
 | Materials and albedo textures | OK | `121` of `139` converted materials bind a texture; the other `18` carry none in the Unity source either. All `13` representative albedo mappings matched |
 | Collision shapes | OK | `0` missing bindings, except `13` colliders whose source mesh is absent from the package itself |
 | GameObject active state and renderer visibility | OK | `32` variants produced exactly `8` visible and `24` hidden meshes, `0` mismatches |
-| Humanoid rigs and skinning | OK for the `8` FPS arm prefabs | `3,600` skin-deformation checks, `0` failures. Scope is those `8` prefabs; a prior generic scan covered `39` skin-bearing prefabs total, including these `8`, and is not a valid general skinning gate — see [below](#skinning-scope) |
+| Humanoid rigs and skinning | OK at the documented source-consistency scope for all `39` skin-bearing prefabs; stronger bind-pose rigidity OK for the `8` FPS arm prefabs | Source consistency: `39/39` prefabs and `1,980` bone poses, `0` mismatches. FPS rigidity: `3,600` checks, `0` failures — see [below](#skinning-scope) |
 | Scene root order | OK | Authored root order restored in the demo scene |
 | Lightmap authoring values | OK | `2` bounces, directional mode, `0.025` texel scale, `2048` maximum texture size |
 | ParticleSystem | Partial | All `30` ParticleSystem/ParticleSystemRenderer pairs produced `GPUParticles3D`; `108` warnings mark omitted or approximated modules |
@@ -78,6 +78,31 @@ meshes were bound in and render correctly regardless. The measurement behind
 that, including the renders, is in
 [Several packages in one project](./multi-package.md#what-this-run-also-settled-the-skinning-check-was-not-vendor-neutral).
 
+The vendor-neutral source-pose gate now covers that full inventory without a
+bind-pose assumption. It found and checked all `39/39` source and output
+skin-bearing prefabs in both directions and compared `1,980` mapped bone poses:
+`37` direct-YAML prefabs (`1,826` bones) and `2` FBX-backed prefab instances
+(`154` bones), with `0` missing or unexplained prefabs and `0` pose mismatches.
+Two independent in-memory negative controls—one for each comparison branch—were
+both detected and restored.
+
+For the weaker FBX branch, saved originals supplied `152` rotation
+cross-checks. The persisted active humanoid maps required `80/80` of those
+checks explicitly; the remaining `2` mapped duplicate-name bones had no saved
+original and were reported as composition-only. Both the persisted source-model
+and final-prefab bone inventories were fully explained.
+
+This result has a deliberately narrower meaning than an independent Unity
+render oracle. The direct branch reuses Unidot's YAML parser and coordinate
+converter, so a symmetric defect in either may escape it. The two FBX-backed
+prefabs use a weaker composition check: a separately instantiated persisted
+source-model scene supplies the pose baseline, while saved mapping and retarget
+metadata cross-check the mapped humanoid rotations. That catches prefab
+composition and application defects, but source-model FBX decoding, humanoid
+mapping, or delta-generation defects can be shared by both sides. The existing
+FPS-arm gates therefore remain: they assert the stronger, package-specific
+bind-pose rigidity property that caught the historical `Root` hijack.
+
 Falling back to automatic bone mapping exposed two further defects, both
 triggered by rigs that combine an incomplete auto-detected bone map with bone
 names duplicated across both hands:
@@ -99,7 +124,7 @@ names duplicated across both hands:
    Unity names.
 
 All three fixes ship with asset-independent synthetic regression tests, and the
-full public test suite passes (`15/15`).
+full public GDScript test suite passes (`17/17`).
 
 ![The same four Standard FPS arm prefabs after the fix: clean, symmetric arms](../../hdnua_arms_after.png)
 
@@ -191,14 +216,18 @@ transform, or skinning value that was converted incorrectly.
 
 ## Full validation run
 
-Results originally collected with importer revision
-`40f917184968c6193c81ebe3fa719a386ea86c1c` and re-confirmed at `b60759d`:
+The import results were originally collected with importer revision
+`40f917184968c6193c81ebe3fa719a386ea86c1c` and re-confirmed at `b60759d`.
+The public suite and source-pose gate were re-run for this report update:
 
-- The public synthetic regression suite passed (`15/15`), including dedicated
+- The public synthetic regression suite passed (`17/17`), including dedicated
   GameObject active-hierarchy, deferred SkinnedMeshRenderer visibility,
   warning-severity, repeated missing-MeshCollider lookup, humanoid avatar bone
   map validation, humanoid `Root` discovery, and duplicate-bone-name prefab
   remap coverage.
+- The source-pose gate found and checked all `39/39` skin-bearing prefabs and
+  compared `1,980` bone poses with `0` mismatches; both negative controls were
+  detected.
 - All `8` FPS arm prefabs passed the skin-deformation identity gate
   (`3,600` checks, `0` failures). See
   [Humanoid skinning correctness](#humanoid-skinning-correctness).
