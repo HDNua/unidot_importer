@@ -148,6 +148,41 @@ positives across `1,693` scenes.
 The recurring shape is a check that enumerates what exists and asserts something
 about each item: absence is invisible to it.
 
+## A source-pose gate reaches the same verdict
+
+The source-pose gate added at revision `0ac70a7` provides a second structural
+check on this case. For direct-YAML prefabs it compares authored bone transforms
+with the converted scene; its weaker inherited-FBX branch requires every Unity
+prefab modification target to resolve through the persisted model file-ID map.
+It was run against both the clean Prototype-only project and the measured
+Prototype-then-Town project, using the same Prototype package as the source:
+
+| | Prototype only | Prototype, then Town |
+| --- | ---: | ---: |
+| Skin-prefab inventories (source/output) | `39/39` | `39/39` |
+| Prefabs checked | `39` | `37` |
+| Direct YAML | `37` / `1,826` bones | `37` / `1,826` bones |
+| Persisted-FBX composition | `2` / `154` bones | `0` |
+| Unsupported prefabs | `0` | **`2`** |
+| Negative controls detected | `2/2` | `1/1` |
+| Numeric pose mismatches | `0` | `0` |
+| Result | **PASS** | **FAIL** |
+
+Both unsupported entries are the female and male underwear prefabs. In the
+combined project their Unity modification target file ID
+`-8799741579280556076` no longer resolves against the persisted Town build of
+`Generic_Characters.fbx`, so the gate fails closed instead of silently skipping
+them. The clean project resolves both prefabs and compares all `154` inherited
+bones with zero error.
+
+This is not an independent Unity data oracle: both checks ultimately examine
+artifacts derived from the same packages. It is nevertheless a different
+invariant and failure mechanism. `verify_output.gd` finds four declared Godot
+`SceneState` paths that vanish after instantiation; the source-pose gate finds
+two unresolved Unity prefab targets in the persisted FBX mapping. Both identify
+the same two prefabs, while the clean baseline has zero declared-path findings
+and passes both source-pose comparison branches.
+
 ## What this run also settled: the skinning check was not vendor-neutral
 
 Running this comparison put `tools/checks/verify_output.gd` over content no gate
