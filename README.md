@@ -2,327 +2,327 @@
 
 *Read this in [한국어](./README.ko.md).*
 
-Unify your Godot asset interop with **Unidot**, a **Uni**versal Go**dot** Engine source asset translator and interoperability pipeline for Godot 4.
+Unidot is a Unity-to-Godot source-asset translator for Godot 4. It converts
+`.unitypackage` archives and extracted Unity asset folders into Godot scenes
+and resources: for example, `.unity` and `.prefab` files become `.tscn`
+scenes, while meshes, animations, materials, and other supported assets become
+Godot-native resources.
 
-At its heart, Unidot Importer can convert `.unitypackage` assets and asset folders into Godot 4.x compatible formats.
+This repository is the public
+[HDNua fork](https://github.com/HDNua/unidot_importer) of
+[V-Sekai/unidot_importer](https://github.com/V-Sekai/unidot_importer). It keeps
+the upstream translator and adds Godot 4.7 compatibility work, an isolated
+output root, reproducible package-validation tools, and fixes backed by public
+regression tests. See [License and attribution](#license-and-attribution).
 
-It takes original **source assets** and *translates* them into Godot native equivalents.
-For example, `.unity` and `.prefab` become `.tscn` and `.prefab.tscn`.
+> [!IMPORTANT]
+> The measured Godot 4.7.1 results below are compatibility evidence for the
+> named packages and configuration, not a promise of lossless Unity project
+> conversion. Scripts, custom shaders, and several engine features still need
+> manual porting.
 
-FBX Files are currently ported to glTF but this may be made more flexible in the future.
+## Current fork status
 
-Raw mesh, anim, material assets and more are converted directly to godot `.tres/.res` equivalents.
+- Upstream's documented compatibility range is Godot 4.0 through 4.2.
+- This fork has compatibility fixes and measured package validation on
+  Godot `4.7.1-stable.mono` for macOS.
+- All six measured package imports completed. Cumulative structural output
+  verification passed after stages 1 through 5 and failed after stage 6 because
+  Fantasy Kingdom contains 52 reproducible meshless nodes. See
+  [Measured package status](#measured-package-status).
+- All six package-scoped source-pose gates passed in the final project, within
+  that gate's documented source-consistency scope. This does not cancel the
+  separate mesh-reference failure and is not an independent Unity rendering
+  oracle.
+- Thread-safe log collection has a synthetic multithreaded regression test.
+  A production end-to-end gate using 10 workers with verbose logging is still
+  pending, so production verbose-mode thread safety is not claimed complete.
 
-Due to being a translator, Unidot may safely be removed from the project when completed. (other than `runtime/anim_tree.gd`)
+The latest detailed evidence lives in the
+[package report index](./docs/packages/README.md), its
+[Korean edition](./docs/packages/README.ko.md), and the
+[validation-tool documentation](./tools/README.md).
 
 ## Quick links
 
-- [Follow updates at https://unidotengine.org/](https://unidotengine.org).
-- [Read documentation at https://docs.unidotengine.org/](https://docs.unidotengine.org).
-- [Join our community on Discord](https://discord.gg/JzXkxMRd9x) for help, to share success or feedback.
+- [HDNua fork](https://github.com/HDNua/unidot_importer)
+- [Upstream project](https://github.com/V-Sekai/unidot_importer)
+- [Upstream website](https://unidotengine.org/)
+- [Upstream documentation](https://docs.unidotengine.org/)
+- [Discord community](https://discord.gg/JzXkxMRd9x)
+- [Godot 4.7.1 compatibility tracking issue](https://github.com/HDNua/unidot_importer/issues/1)
 
-## Made for Godot Engine 4
+## Requirements
 
-We rely on automatic FBX to glTF translation during `.unitypackage` import using FBX2glTF. [please download the FBX2glTF exe](https://github.com/godotengine/FBX2glTF/releases) and configure FBX Import in Godot Editor Settings before using Unidot.
+Unidot has been used on Windows, macOS, and Linux. The current Godot 4.7.1
+package measurements in this fork are macOS measurements; they do not establish
+the same coverage for every OS and renderer combination.
 
-Please use a version of Godot 4.0 or later with FBX2glTF configured in Editor Settings to run this addon.
+The upstream FBX path uses
+[FBX2glTF](https://github.com/godotengine/FBX2glTF/releases). Install it and set
+the FBX2glTF executable in Godot's **Editor Settings → Import** when using that
+path. The published Godot 4.7.1 package measurements used Godot's native FBX
+importer, so do not assume identical results between the two FBX paths.
 
-## System requirements:
+At least 16 GB of RAM is recommended for large packages. Unidot pre-parses many
+assets and can use 10–12 GB during large imports; virtual-memory swapping is
+expected to be slower but is not by itself a failure.
 
-Unidot has been tested on Windows, macOS and Linux versions. It supports Godot Editor versions 4.0 through 4.2, with compatibility smoke-tested on Godot 4.7.1.
+## Installation and use
 
-Unidot recommends a system with at least 16GB of RAM for many assets. It is uncommon for large imports to take more than 10-12GB.
+1. Place this repository at `addons/unidot_importer` in a Godot project, for
+   example as a Git submodule or an extracted archive.
+2. Enable **Unidot Importer** under **Project Settings → Plugins**.
+3. Configure FBX2glTF in **Editor Settings → Import** when using the upstream
+   FBX2glTF path.
+4. For TIFF/`.tif` and PSD/`.psd` support, install
+   [ImageMagick](https://imagemagick.org/) or
+   [GraphicsMagick](http://www.graphicsmagick.org/) in the system path, or place
+   `convert.exe` in this add-on directory on Windows.
+5. Open **Project → Tools → Import .unitypackage...** and select a package or an
+   asset folder.
 
-Due to pre-caching of assets in memory, it is okay if some data is swapped to disk with virtual memory, especially in large imports of thousands of files..
+Converted scenes can reference `runtime/anim_tree.gd`. Keep that file if you
+remove the rest of the importer after conversion.
 
-## Installation:
-
-1. This repository should be imported at `addons/unidot_importer` in the project, such as using git submodule or unzipping.
-   * Note that `runtime/anim_tree.gd` will be referenced by scenes and should be kept even if the rest of unidot is removed.
-2. Enable the Unidot Importer plugin in `Project Settings -> Plugins tab -> Unidot`
-3. Unidot requires an installation of FBX2glTF from https://github.com/godotengine/FBX2glTF/releases and set in the FBX2glTF.exe path in the Import category of **Editor Settings** (not Project Settings)
-4. To add TIFF / .tif and PSD / .psd support, install [ImageMagick](https://imagemagick.org/) or [GraphicsMagick](http://www.graphicsmagick.org/) into your system path or copy convert.exe into this addon directory.
-5. Access the importer through `Project -> Tools -> Import .unitypackage...` and select a package or an asset folder
+![FBX2glTF in Editor Settings and the plug-in enabled in Project Settings](./unidot_instructions.png)
 
 ### Import destination
 
-The import dialog can place translated assets below a project-relative destination
-without changing their Unity source paths. The default remains `res://` for
-backward compatibility. For example, selecting `res://Unidot` maps:
+The import dialog can place translated assets below a project-relative output
+root without changing their Unity source paths. The backward-compatible default
+is `res://`. Selecting `res://Unidot`, for example, maps:
 
 ```text
 Assets/Example/Model.fbx -> res://Unidot/Assets/Example/Model.fbx
 ```
 
-Projects may provide a default with the `unidot/import_output_root` project
-setting. The destination must remain inside `res://`; absolute paths, `user://`,
+A project can provide a default with the `unidot/import_output_root` setting.
+The destination must stay inside `res://`; absolute paths, `user://`,
 backslashes, and relative `.` or `..` segments are rejected.
-When a non-root destination is selected, fallback texture and material searches
-are confined to that destination so existing project assets are not linked by
-accident.
-The importer assumes a trusted project tree and does not sandbox writes against
-pre-existing symlinks or junctions inside the project.
-The asset database keeps one active output path per Unity GUID, so importing the
-same package into multiple destinations in one project is not supported.
 
-![Screenshot showing FBX2glTF in Editor Settings, and enabling the plugin in Project Settings](./unidot_instructions.png)
+When a non-root destination is used, fallback texture and material searches are
+confined to that destination. This prevents unrelated assets already present in
+the project from being linked by fallback lookup. The importer assumes a
+trusted project tree and does not sandbox writes against pre-existing symlinks
+or junctions. The asset database retains one active output path per Unity GUID,
+so importing the same package into several destinations in one project is not
+supported.
 
-Read more at our [documentation site](https://docs.unidotengine.org).
+## What Unidot converts
 
-## Features
+- Unity `.unitypackage` archives and extracted asset folders
+- Unity scenes and prefabs, including inherited prefabs
+- Meshes, MeshFilter, MeshRenderer, and SkinnedMeshRenderer
+- Standard materials and supported texture properties
+- Avatar and AnimationClip resources
+- AnimatorController, state machines, transitions, and blend trees
+- GameObject, Transform, colliders, Rigidbody, Light, Camera, and AudioSource
+- Texture2D, CubeMap, Texture2DArray, and AudioClip
+- Terrain, with limited detail-mesh support through MultiMeshInstance
+- LightingSettings and PostProcessLayer at their documented conversion scope
+- A deterministic common subset of ParticleSystem and ParticleSystemRenderer
 
-- `.unitypackage` importer and translation shim.
-- Translates native filetypes (such as .unity or .mat) to Godot native scene or resource types.
-- Animation and animation tree porting, including humanoid .anim format.
-- Support for humanoid armatures, including from prefabs, unpacked prefabs and model import.
-- Translates prefabs and inherited prefabs to native Godot scenes and inherited scenes.
-- Supports both binary and text YAML encoding
-- Implementation of an asset database by GUID
+The fork also preserves GameObject active-in-hierarchy state and renderer
+visibility, validates structurally inconsistent humanoid maps before using
+them, handles duplicated bone names across hands, and recognizes common
+underscored Unity texture properties such as `_Albedo_Map`, `_Base_Map`,
+`_Normal_Map`, and `_Emission_Map`.
 
-Note that scripts and shaders will need to be ported by hand. However, it will be possible to map scripts/shaders to Godot equivalents after porting.
+## Unsupported or partial
 
-## Supported asset types:
+- Unity C# scripts and MonoBehaviour behavior are not ported.
+- ShaderGraph and SubGraph semantics are not translated. Source files are
+  preserved for manual porting.
+- Custom shaders need manual Godot equivalents.
+- Canvas/UI, AvatarMask, and PlayableDirector are not implemented.
+- ParticleSystem conversion covers a deterministic common subset. Unsupported
+  modules and approximations emit explicit warnings.
+- Unity realtime GI has no direct Godot LightmapGI equivalent; supported
+  lightmap authoring values are preserved, while realtime intent is metadata.
+- Anything not listed as supported should be treated as unsupported until
+  measured.
 
-* Mesh/MeshFilter/MeshRenderer/SkinnedMeshRenderer
-* Material (standard shader only)
-* Avatar
-* AnimationClip
-* AnimatorController (relies on small runtime helper script `unidot_importer/runtime/anim_tree.gd`)
-* AnimatorState/AnimatorStateMachine/AnimatorTransitionBase/BlendTree
-* PrefabInstance (prefabs)
-* GameObject/Transform/Collider/SkinnedMeshRenderer/MeshFilter/Animator/Light/Camera etc. (scenes)
-* Texture2D/CubeMap/Texture2DArray etc.
-* AssetImporter
-* AudioClip/AudioSource
-* Collider/Rigidbody
-* Terrain (limited support for detail meshes as MultiMeshInstance)
-* LightingSettings/PostProcessLayer
+## Reproducible validation
 
-## Unsupported
+The repository includes a headless validation harness. It is intended for
+repeatable testing and report production; it is not yet a stable general-purpose
+headless import API.
 
-* Shader: a system may someday be added to create mappings of equivalent Godot Engine shaders, but porting must be done by hand.
-* MonoBehaviour (C# Script porting)
-* AvatarMask (waiting for better Godot engine support)
-* Canvas / UI is not implemented.
-* PlayableDirector
-* Anything not listed above
+### One package in isolation
+
+`tools/validate_package.py` creates a throwaway Godot project, copies the
+current checkout into `addons/unidot_importer`, imports into
+`res://Unidot`, and can verify the result:
+
+```bash
+python3 tools/validate_package.py "/path/to/Pack.unitypackage" --run --verify
+```
+
+The sync copies the working tree except `.git`, so run it from a clean checkout
+to keep untracked or local files out of the validation project.
+
+Use a separate clean project for every per-package report. This keeps its GUID
+database, Godot import cache, output, and diagnostic counts attributable to that
+package.
+
+### Several packages in one project
+
+Package integration is a different test. Compare archives first, then import in
+an explicit order and verify after every stage:
+
+```bash
+python3 tools/checks/package_overlap.py A.unitypackage B.unitypackage
+python3 tools/validate_package.py A.unitypackage B.unitypackage --run --verify
+```
+
+The tools have deliberately separate responsibilities:
+
+- `import_report.py` classifies stage-scoped diagnostics and inventories
+  output; `--json` provides machine-readable output.
+- `verify_output.gd` loads and instantiates every generated scene, checks that
+  every declared node path survives instantiation, and rejects meshless
+  `MeshInstance3D` nodes.
+- `package_overlap.py` reports shared GUIDs, conflicting bytes, metadata
+  differences, path collisions, and directional model-consumer review
+  candidates without running Godot.
+- `unity_source_pose_gate.py` checks converted skin-bearing prefabs against
+  source-side and persisted-conversion evidence and includes negative controls.
+  Its documented weaker FBX branch is a source-consistency check, not an
+  independent Unity renderer.
+- Publisher-specific gates remain under `tools/publishers/`; they are not
+  promoted to vendor-neutral checks.
+
+These checks establish specific structural and source-consistency invariants.
+They do not prove visual, behavioral, shader, or gameplay parity. Generated
+validation context can contain local source paths; review it before publishing.
+See [tools/README.md](./tools/README.md) for the full contracts.
+
+## Measured package status
+
+The two packages marked **isolated** have a full dedicated-project report.
+Town, War, and Sci-Fi City currently have only cumulative staged-integration
+evidence, so their PASS rows must not be presented as isolated package
+measurements. Fantasy Kingdom has the staged result plus a focused clean
+single-package control that reproduced the same failure.
+
+| Publisher | Package | Evidence available | Measured result | English | 한국어 |
+| --- | --- | --- | --- | --- | --- |
+| Synty Studios | POLYGON - Starter Pack | Isolated report; six-pack stage 1 | Isolated conversion OK; stage PASS | [Report](./docs/packages/polygon-starter.md) | [리포트](./docs/packages/polygon-starter.ko.md) |
+| Synty Studios | POLYGON - Town Pack | Six-pack cumulative stage 2 only | Stage PASS | [Integration report](./docs/packages/multi-package.md) | [통합 리포트](./docs/packages/multi-package.ko.md) |
+| Synty Studios | POLYGON - War Pack | Six-pack cumulative stage 3 only | Stage PASS | [Integration report](./docs/packages/multi-package.md) | [통합 리포트](./docs/packages/multi-package.ko.md) |
+| Synty Studios | POLYGON - Prototype Pack | Isolated report; six-pack stage 4 | Isolated conversion OK at documented scope; stage PASS | [Report](./docs/packages/polygon-prototype.md) | [리포트](./docs/packages/polygon-prototype.ko.md) |
+| Synty Studios | POLYGON - Sci-Fi City Pack | Six-pack cumulative stage 5 only | Stage PASS | [Integration report](./docs/packages/multi-package.md) | [통합 리포트](./docs/packages/multi-package.ko.md) |
+| Synty Studios | POLYGON - Fantasy Kingdom Pack | Six-pack stage 6; focused clean control | **FAIL / known model-reference limitation** | [Integration report](./docs/packages/multi-package.md) | [통합 리포트](./docs/packages/multi-package.ko.md) |
+
+All rows above were measured with Godot `4.7.1-stable.mono` on macOS, but at
+the importer revisions recorded in the linked reports. Do not silently
+inherit those results after converter changes.
+
+### Six-package staged run
+
+At importer revision `c0892c5`, a clean project imported Starter → Town → War
+→ Prototype → Sci-Fi City → Fantasy Kingdom. Every import completed. Each row
+below is cumulative and verifies the whole project after adding that package:
+
+| Stage | Package added | Scenes loaded / instantiated | Declared paths / missing | Mesh nodes / meshless | Verify |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | Starter | `499/499` | `2,855 / 0` | `1,422 / 0` | PASS |
+| 2 | Town | `1,253/1,253` | `12,214 / 0` | `8,037 / 0` | PASS |
+| 3 | War | `1,840/1,840` | `21,133 / 0` | `15,336 / 0` | PASS |
+| 4 | Prototype | `2,340/2,340` | `25,091 / 0` | `17,663 / 0` | PASS |
+| 5 | Sci-Fi City | `2,979/2,979` | `32,146 / 0` | `22,974 / 0` | PASS |
+| 6 | Fantasy Kingdom | `5,175/5,175` | `77,811 / 0` | `58,646 / 52` | **FAIL** |
+
+The 52 findings are 17 direct meshless nodes in 16 Fantasy prefabs and 35 uses
+of those prefabs in three Fantasy scenes. A clean Fantasy-only control loaded
+and instantiated `2,687/2,687` scenes with zero missing declared paths and
+reproduced the exact same 52 meshless nodes. The current evidence points to a
+Fantasy-local model sub-object/file-ID resolution limitation, not a shared-GUID
+overwrite by one of the preceding five packages.
+
+The measured order avoided one previously reproduced content-loss case in which
+Town replaced a shared character model after Prototype. It is a risk-minimizing
+validation order, not a proof of a lossless or universally safe order. The only
+directional constraint supported by current evidence is to put Town and War
+before Fantasy Kingdom, Prototype, or Sci-Fi City. Read the bilingual
+integration report before combining these packs:
+[English](./docs/packages/multi-package.md) ·
+[한국어](./docs/packages/multi-package.ko.md).
+
+## Understanding the import diagnostics
+
+A large engine `ERROR` count or a non-zero Unidot warning counter is not, by
+itself, a conversion verdict. Observed package diagnostics include:
+
+1. dead texture paths embedded in vendor FBX files;
+2. GUID references already missing from the source package;
+3. explicit notices for unsupported or approximated features;
+4. importer validators reporting that they rejected inconsistent source data.
+
+Use `import_report.py`, the output verifier, and the package report together.
+Do not assume every error is harmless: script errors, missing declared nodes, or
+meshless output can still be real importer defects.
+
+![A completed POLYGON Prototype import with non-zero warning and error counters](./hdnua_import_dialog.png)
+
+## Known limitations
+
+- Fantasy Kingdom currently reproduces 52 meshless nodes because some Unity
+  model sub-object/file-ID references do not resolve to Godot's extracted
+  meshes. This is the current public conversion blocker documented above.
+- Godot's FBX texture probing can preserve a lowercase `textures/` spelling
+  after opening `Textures/` on a case-insensitive filesystem. The resulting
+  extracted-mesh reference can fail on a case-sensitive filesystem; converted
+  Unity `.mat` resources are unaffected.
+- Reimporting animations can lose corrected track paths because scenes modify
+  animations during import.
+- Missing GUID references are not always obvious in source content.
+- Humanoid rigs missing UpperChest, Shoulder, or Neck, rotated hips, scaled
+  armatures, and unpacked humanoid prefabs can still require review.
+- Non-weight-painted vertices currently fall back to skeleton bone index 0.
+- FBX conversion paths can have their own limitations, including n-gons and
+  RotationPivot handling.
+- Dependency selection does not discover every texture referenced by a model.
+- Import can consume substantial memory and appear unresponsive during large
+  animation phases.
 
 ## Troubleshooting
 
-* If an import fails, it is possible to view the logs of the most recently completed import.
-	* Use `Project -> Tools -> Show last import logs`.
-	* Click the yellow or red columns to see all errors in the project.
-	* Or, click a Logs button on a file to see the entire log.
-	* Clicking the Logs for Assets may take time to collect all logs in the project, but can be helpful for submitting a bug report.
-	* The Godot console output may also be helpful if submitting a bug report.
+- Open **Project → Tools → Show last import logs** after an interactive import.
+  Yellow and red columns show grouped diagnostics; a file's **Logs** button
+  shows its complete log.
+- Confirm that all referenced dependencies were included.
+- If a large import crashes, reproduce it with a smaller package or subset.
+- For subset imports, import textures before materials, and models/materials
+  before scenes. Shift-selection helps but does not discover every dependency.
+- If a scene model looks corrupted and uses an unpacked prefab, compare it with
+  the converted original model scene.
+- For repeatable bug reports, use an isolated project and record the Godot
+  version, importer commit, FBX path, command, and verification result. Do not
+  publish licensed asset bytes or local source paths.
 
-* It would be good to double check that all dependencies imported, and then try again.
+## Project scope
 
-* If Godot crashes during an import, it may be good to try a smaller import.
+Unidot translates usable source assets made for editor workflows. It does not
+decompile asset bundles or rip game content, and there are no plans to add
+those capabilities. Use only assets you have the right to convert.
 
-* If importing a subset of files, import assets in the correct order: make sure to do materials after textures, and scenes after models / materials they may need.
-  Using the shift key while selecting assets can ensure you include the needed depdencies.
+## License and attribution
 
-* If models in a scene are looking corrupted, it may be due to the scene using unpacked prefabs. In this case, replacing them with the original converted ".gltf" should work.
+This fork remains licensed under the repository's [MIT license](./LICENSE.txt).
+The original copyright and permission notices remain in that file. Unidot was
+created by Lyuma and contributors, with work from the V-Sekai community and the
+other contributors credited by the upstream project.
 
-## Known issues
+Special thanks retained from upstream:
 
-- There may be large memory consumption in the earlier phases of the import process. Unidot will pre-parse most assets upfront in the "Preprocessing" stage.
-  Additionally, Godot may read textures from disk while assigning materials.
-- Due to memory constraints, large animation files currently import in the main thread.
-	- This could cause Godot to hang or freeze for a long time in animation packs with a message such as "Importing 50 textures, animations and audio...".
-- Reimporting animations after import can lose the correct track paths, since the animations are modified during scene import.
-- Unidot does not indicate clearly when assets are missing GUID references. Models missing referenced data may not import correctly.
-- Models missing UpperChest, Shoulder or Neck bones may animate incorrectly due to lack of missing bone compensation in Godot's Humanoid retargeter.
-- Unpacked prefabs of humanoid models may malfunction due to the retargeting.
-  Unidot does its best to correct these cases, but some models, especially those with rotated hips and scaled armature, may malfunction.
-- non-weight-painted vertices currently go to skeleton origin instead of hips (bone index 0)
-- FBX2glTF which is used to convert .fbx to .gltf has some rare bugs. These would currently affect all FBX imports into Godot Engine.
-	- Some rare fbx models with ngons may be missing triangles.
-	- Models using RotationPivots may not have the meshes centered at the pivot points,
-	  which could impact content or animations that expect the correct pivots.
-- Shift to select dependencies does not find all texture assets referenced by models.
-
-## Future work
-
-- Repacking unpacked avatar prefabs where possible
-- Better support for attaching outfits to imported models.
-  For example, if any skinned meshes are humanoid but missing animator or no avatar set,
-  treat skeleton hierarchy as having humanoid avatar enabled from that model.
-- Reduce the dependency on FBX conversion tools
-
-## A final note:
-
-This tool is designed to assist with importing or translating source assets made for use in the editor. It makes an assumption that (other than animator controllers) most yaml files contain only one object).
-
-Unidot solely translates existing usable source assets into equivalent Godot source assets. There are no plans to add functionality for decompiling asset bundles or ripping game content. That is not the goal of this project.
-
-# Join our community
-
-- [Follow updates at https://unidotengine.org/](https://unidotengine.org).
-- [Read documentation at https://docs.unidotengine.org/](https://docs.unidotengine.org).
-- [Join our community on Discord](https://discord.gg/JzXkxMRd9x) for help, to share success or feedback.
-
-# Thanks
-
-it is only thanks to all of you in the community using and supporting the project,
-and for the many contributors that Unidot released in the form it has today <3
-
-Special Thanks to
-
-* Cthulhoo for some incredibly useful testcases for various humanoid rigs and animations,
-  and for their explanation and insight into how Root Motion works that allowed me to implement RM support.
-* Stan for sending over some really cool gamejam projects filled with all sorts of different ways to reference prefabs.
-* And quite a number of others who provided test assets or testing.
-* The [V-Sekai community](https://github.com/V-Sekai) for all your support.
-* The [V-Sekai team](https://v-sekai.org) for contributions and inspiration.
-
-![Screenshot showing an import dialog open with a scene underneath](./unidot_example.jpg)
-
-## HDNua update
-
-### Tested packages
-
-| Publisher | Package | Tested with | Support | Report |
-| --- | --- | --- | :---: | --- |
-| Synty Studios | POLYGON - Prototype Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-prototype.md) |
-| Synty Studios | POLYGON - Starter Pack | Godot `4.7.1-stable.mono`, macOS | △ Partial | [Details](./docs/packages/polygon-starter.md) |
-
-Each package is validated in its own throwaway project, scaffolded by
-`tools/validate_package.py`. See
-[docs/packages/](./docs/packages/README.md) for how a report is produced and
-what it should separate.
-
-Importing several packages into one project is a separate, order-dependent case:
-where two packages ship the same Unity GUID with different content, the one
-imported last replaces the file, and content converted from the earlier package
-that referenced a part the replacement lacks is left incomplete. This is a
-property of the packages, not of Unidot, and there is nothing in the archives
-that says which version is intended. `tools/checks/package_overlap.py` reports
-what will contend before you import, and
-[Several packages in one project](./docs/packages/multi-package.md) records a
-measured case.
-
-`△ Partial` means the package has a validated usable subset, but the import is
-not lossless and still requires review or manual porting for the gaps below. The
-status stays `△` because ShaderGraph content is not translated at all — not
-because the converted geometry is in doubt.
-
-### What converts
-
-| Area | Status | Notes |
-| --- | :---: | --- |
-| Meshes, transforms, prefab and scene hierarchy | ○ Converted | |
-| Materials and albedo textures | ○ Converted | Underscored Unity texture properties such as `_Albedo_Map`, `_Base_Map`, `_Normal_Map`, and `_Emission_Map` are recognized, and mask, normal, metallic, roughness, and emission textures are prevented from being picked as generic albedo fallbacks |
-| Collision shapes | ○ Converted | |
-| GameObject active state and renderer visibility | ○ Converted | Combines the renderer's `m_Enabled` state with its source GameObject's active-in-hierarchy state, even when the mesh is deferred under a shared `Skeleton3D` |
-| Humanoid rigs and skinning | ○ Converted | Including rigs whose Unity avatar is structurally invalid, and rigs with bone names duplicated across both hands |
-| Scene root order | ○ Converted | |
-| Lightmap authoring values | ○ Converted | Realtime GI intent is metadata only |
-| ParticleSystem | △ Partial | The deterministic common subset converts; enabled modules outside it produce explicit warnings |
-| Realtime GI | ✗ Not converted | Godot `LightmapGI` has no realtime equivalent |
-| ShaderGraph and SubGraph | ✗ Not converted | Preserved as source for manual porting; semantics are not translated |
-
-Per-package figures backing each row are in that package's report.
-
-### Understanding the import diagnostics
-
-Importing a Synty package prints a large number of engine-level `ERROR` lines
-and leaves non-zero warning and error counters in the Unidot dialog. **This is
-expected, and on its own it does not indicate a failed or incorrect
-conversion.** Every diagnostic observed so far falls into one of four classes,
-three of which are defects in the source package rather than in the conversion.
-
-![The Unidot import dialog after a full POLYGON Prototype import, reporting 124 warnings and 13 errors alongside "Import complete."](./hdnua_import_dialog.png)
-
-*What a successful import looks like: `Import complete.` with warnings and
-errors still on the counters. The POLYGON Prototype report accounts for every
-one of them.*
-
-**1. Dead texture paths baked into the vendor's FBX files.** This is the source
-of the thousands of red `ERROR` lines in the Godot console. Synty artists export
-their FBX files with their own working textures still assigned — `.psd`, `.tif`,
-and source `.png` files under their personal working folders, and in some cases
-a plain `C:/Users/<artist>/Downloads/...` path. Those paths are stored verbatim
-inside the shipped FBX, but the files themselves are not part of the
-`.unitypackage`; only the flattened runtime `.png` atlases are. Unity never
-surfaces this because it ignores FBX-embedded material references and binds
-textures through the `.mat` asset's GUID instead. Godot's FBX parser is more
-literal: it resolves each embedded path, fails, and reports it. This is cosmetic
-because Unidot does not trust FBX-embedded materials either — it converts the
-Unity `.mat` assets and assigns them after import.
-
-**2. References the package ships already broken.** Prefabs can point at a mesh,
-texture, or script GUID that no `.meta` file in the package owns, so the
-reference is dead in Unity too. Unidot reports each one once as a structured
-source-data failure, skips only the affected component, and converts the rest of
-the object normally. These are what fill the red error counter in the dialog.
-
-**3. Feature-gap notices.** Where Godot has no equivalent for a Unity feature —
-most ParticleSystem modules, ShaderGraph semantics, realtime GI, lightmap values
-outside Godot's supported range — Unidot converts what it can and warns
-explicitly about what it approximated or skipped. These are the bulk of the
-warning counter.
-
-**4. Unidot's own validators reporting that they caught something.** The
-humanoid bone-map validator logs a warning when it rejects a structurally
-invalid Unity avatar and falls back to automatic bone mapping, and the `Root`
-guard logs when it refuses to overwrite an existing profile mapping. A warning
-from these means the defense worked.
-
-Only one class of diagnostic points at a defect neither the package nor Unidot
-can be blamed for; see [Known limitations](#known-limitations).
-
-### Source-data defects Unidot defends against
-
-Unity's humanoid avatar is used only for animation retargeting, and Unity draws
-scenes straight from the original rig transforms. A badly authored avatar is
-therefore invisible in Unity, but an importer that trusts it to rebuild the
-skeleton will produce a collapsed mesh. Unidot validates a `humanDescription`
-bone map against the rig hierarchy — every mapped bone's nearest mapped ancestor
-must also be its ancestor in `SkeletonProfileHumanoid` — and falls back to
-automatic humanoid bone mapping when the map is structurally inconsistent,
-logging a warning that says so. A map with no `Hips` at all is rejected the same
-way.
-
-The POLYGON Prototype pack ships exactly such an avatar, and the
-[package report](./docs/packages/polygon-prototype.md#source-data-defect-the-synty-humanoid-avatar)
-walks through it as a worked example, including the before and after renders.
-
-### Known limitations
-
-The `△ Partial` status is intentional. ShaderGraph/SubGraph files are preserved
-for manual porting, not converted to Godot shaders. ParticleSystem conversion
-covers the common deterministic subset; modules such as Rotation, Noise,
-Velocity, ClampVelocity, UV animation, Collision, bursts, and some shape or
-billboard modes are omitted or approximated with explicit warnings. Unity
-realtime GI is also not converted to a Godot realtime-GI system.
-Active-state validation covers serialized base GameObject and renderer states;
-arbitrary prefab overrides that toggle active state are not yet covered by any
-package fixture.
-
-One defect belongs to neither the package nor Unidot, and Unidot cannot correct
-it. Godot's FBX importer resolves an embedded texture reference by probing
-candidate directories, and one of those probes is a lowercase `textures/`. On a
-case-insensitive filesystem that probe opens a file stored as `Textures/`, Godot
-warns about the case mismatch, and the requested spelling is what gets written
-into the extracted mesh. That reference then fails to load if the project is
-exported to a case-sensitive filesystem. The converted `.mat` resources are
-unaffected, so prefabs and scenes render correctly. Unidot cannot repair the
-stored reference from its post-import script: it writes those `.mesh` files, but
-Godot's own `save_to_file` subresource extraction rewrites the same paths
-afterwards, so any correction made during post-import is overwritten. Fixing it
-properly requires a change in the engine's texture probe or in how the model
-`.import` configuration extracts meshes.
-
-The red error counter in the Unidot log is a count of diagnostic messages, not
-a count of unique failed files or failed scenes. A scene can load successfully
-while an unsupported component or override inside it was skipped.
-
-These are compatibility results for the packages and configuration listed above,
-not a claim that every Synty package or every Unity feature is fully supported.
-Custom ShaderGraph/SubGraph content, MonoBehaviours, advanced ParticleSystems,
-realtime GI, and source assets with missing external references may still
-require manual work.
+- Cthulhoo, for humanoid-rig and root-motion test cases and insight.
+- Stan, for game-jam projects with varied prefab-reference patterns.
+- Everyone who contributed test assets and reports.
+- The [V-Sekai community](https://github.com/V-Sekai) and
+  [V-Sekai team](https://v-sekai.org).
 
 ![Synty POLYGON Prototype demo imported with Unidot in Godot 4.7.1](./hdnua_synty_polygon_prototype_godot_4_7_1.png)
+
+![An Unidot import dialog over a converted scene](./unidot_example.jpg)

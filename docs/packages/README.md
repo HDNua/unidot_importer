@@ -1,18 +1,21 @@
 # Package validation reports
 
+*Read this page in [Korean](./README.ko.md).*
+
 One file per `.unitypackage` that has been validated against this fork. The main
 [README](../../README.md) documents what Unidot converts in general; these
 reports carry the figures for a specific package.
 
-- [Synty POLYGON - Prototype Pack](./polygon-prototype.md)
-- [Synty POLYGON - Starter Pack](./polygon-starter.md)
+- Synty POLYGON - Prototype Pack: [English](./polygon-prototype.md) · [한국어](./polygon-prototype.ko.md)
+- Synty POLYGON - Starter Pack: [English](./polygon-starter.md) · [한국어](./polygon-starter.ko.md)
 
 Plus one report that is not about a package but about combining them:
 
-- [Several packages in one project](./multi-package.md)
+- Several packages in one project: [English](./multi-package.md) · [한국어](./multi-package.ko.md)
 
-Reports are written in English only. Their figures change with every import run,
-and keeping two translations of them in step is not worth the drift.
+Reports are maintained in English and Korean. Treat the measured revision,
+figures, code blocks, and caveats as one bilingual record: whenever validation
+changes them, update both language files in the same change.
 
 ## Producing a report
 

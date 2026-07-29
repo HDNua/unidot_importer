@@ -1,5 +1,7 @@
 # Several packages in one project
 
+*Read this report in [Korean](./multi-package.ko.md).*
+
 The other files here each measure one `.unitypackage` in isolation. This one is
 about what happens when several land in the same project, which is what a real
 project does and the only case where packages that share a GUID contend for the

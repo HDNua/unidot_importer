@@ -1,5 +1,7 @@
 # Synty POLYGON - Starter Pack
 
+*Read this report in [Korean](./polygon-starter.ko.md).*
+
 Validation report for the Synty **POLYGON - Starter Pack** `.unitypackage`.
 See [README.md](../../README.md) for what Unidot converts in general and for the
 behaviour every Synty package shares; this file records only what is specific to

@@ -1,5 +1,7 @@
 # Synty POLYGON - Prototype Pack
 
+*Read this report in [Korean](./polygon-prototype.ko.md).*
+
 Validation report for the Synty **POLYGON - Prototype Pack** `.unitypackage`.
 See [README.md](../../README.md) for what Unidot converts in general and for the
 behaviour every Synty package shares; this file records only what is specific to
