@@ -6564,6 +6564,30 @@ class UnidotMonoBehaviour:
 		get:
 			return keys.get("m_Script", [null, 0, null, null])
 
+	func get_monoscript_identity() -> Dictionary:
+		var identity := {
+			"guid": "",
+			"file_id": 0,
+			"path": "",
+			"class_name": "",
+		}
+		if monoscript.size() >= 3:
+			identity.guid = str(monoscript[2])
+			identity.file_id = int(monoscript[1])
+		var script_meta: Resource = meta.lookup_meta(monoscript)
+		if script_meta != null:
+			identity.path = str(script_meta.orig_path)
+		else:
+			# MonoScripts are normally not imported as Godot resources, so their
+			# AssetMeta is pruned and the output-root-scoped lookup above returns
+			# null. The database retains their source identity independently.
+			var database: Resource = meta.get_database()
+			if database != null and database.has_method("get_source_asset_path"):
+				identity.path = str(database.get_source_asset_path(identity.guid))
+		identity.path = str(identity.path).replace("\\", "/")
+		identity.class_name = str(identity.path).get_file().get_basename()
+		return identity
+
 	func get_godot_type() -> String:
 		return "GDScript"
 
@@ -6575,7 +6599,28 @@ class UnidotMonoBehaviour:
 				ret = this_ret
 		if ret != null:
 			return ret
-		return super.create_godot_node(state, new_parent)
+		if not meta.get_database().add_unsupported_components:
+			return null
+		var identity := get_monoscript_identity()
+		ret = Node.new()
+		ret.name = identity.class_name if not identity.class_name.is_empty() else type
+		state.add_child(ret, new_parent, self)
+		assign_object_meta(ret)
+		# Keep the light-weight script identity even when full Unity YAML metadata
+		# is disabled. This preserves project prefixes such as SH0_ in both the
+		# scene tree and machine-readable migration evidence without pretending
+		# that the Unity MonoBehaviour can execute in Godot.
+		ret.set_meta("unity_monoscript_guid", identity.guid)
+		ret.set_meta("unity_monoscript_file_id", identity.file_id)
+		if not identity.path.is_empty():
+			ret.set_meta("unity_monoscript_path", identity.path)
+			# The filename is a readable hint, not a parsed C# declaration. Keeping
+			# that distinction avoids lying about projects whose filename and type
+			# spelling differ.
+			ret.set_meta("unity_monoscript_class_hint", identity.class_name)
+		if meta.get_database().enable_unidot_keys:
+			ret.editor_description = str(self)
+		return ret
 
 	# No need yet to override create_godot_node...
 	func create_godot_resource() -> Resource:

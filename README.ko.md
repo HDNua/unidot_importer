@@ -153,6 +153,20 @@ bone name을 처리합니다. `_Albedo_Map`, `_Base_Map`, `_Normal_Map`,
 python3 tools/validate_package.py "/path/to/Pack.unitypackage" --run --verify
 ```
 
+같은 도구로 Unity 프로젝트의 `Assets` 디렉터리도 직접 임포트할 수 있습니다.
+마이그레이션 검토용 보존 옵션을 사용하면 텍스트 씬을 만들고 Unity YAML과
+MonoBehaviour/미지원 컴포넌트의 비실행 placeholder 노드를 남깁니다.
+
+```bash
+python3 tools/validate_package.py "/path/to/UnityProject/Assets" \
+  --run --verify --text-scenes --preserve-yaml --add-unsupported
+```
+
+placeholder 노드를 켜면 MonoBehaviour 노드 이름에는 원본 MonoScript 파일명이
+사용되고 GUID, 경로, file ID, 클래스명 힌트도 metadata로 보존됩니다. 이는 수동
+포팅을 위한 원본 식별자 보존이며 Unity C# 동작을 Godot에서 실행시키는 기능은
+아닙니다.
+
 동기화는 `.git`을 제외한 working tree를 복사하므로, untracked 또는 로컬 파일이
 검증 프로젝트에 섞이지 않게 clean checkout에서 실행하세요.
 

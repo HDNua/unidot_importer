@@ -36,6 +36,10 @@ var log_limit_per_guid: int = 100000
 
 @export var guid_to_path: Dictionary = {}
 @export var path_to_meta: Dictionary = {}
+# Source identity is intentionally separate from guid_to_path/path_to_meta.
+# The latter only describes assets that have a Godot output resource, while
+# Unity MonoScripts are commonly left unselected and therefore have no output.
+@export var guid_to_source_asset_path: Dictionary = {}
 
 # Must be non-null to hold material references
 @export var truncated_shader_reference: Shader = null
@@ -190,6 +194,20 @@ func get_meta_by_guid(guid: String, output_root: Variant = null) -> Resource:  #
 			return null
 		return meta
 	return null
+
+
+func register_source_asset_path(guid: String, source_path: String) -> void:
+	var normalized_guid := guid.strip_edges()
+	var normalized_path := source_path.strip_edges().replace("\\", "/")
+	while normalized_path.begins_with("./"):
+		normalized_path = normalized_path.trim_prefix("./")
+	if normalized_guid.is_empty() or normalized_path.is_empty():
+		return
+	guid_to_source_asset_path[normalized_guid] = normalized_path
+
+
+func get_source_asset_path(guid: String) -> String:
+	return str(guid_to_source_asset_path.get(guid, ""))
 
 
 func guid_to_asset_path(guid: String) -> String:

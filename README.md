@@ -159,6 +159,21 @@ current checkout into `addons/unidot_importer`, imports into
 python3 tools/validate_package.py "/path/to/Pack.unitypackage" --run --verify
 ```
 
+The same harness can import a Unity project's `Assets` directory directly.
+For migration review, the optional preservation flags produce text scenes,
+retain serialized Unity YAML, and add non-executing placeholder nodes for
+MonoBehaviours and unsupported components:
+
+```bash
+python3 tools/validate_package.py "/path/to/UnityProject/Assets" \
+  --run --verify --text-scenes --preserve-yaml --add-unsupported
+```
+
+When placeholder nodes are enabled, MonoBehaviour placeholders use the source
+MonoScript filename as their readable node name and retain its GUID, path,
+file ID, and class-name hint as metadata. This preserves source identities for
+manual porting; it does not make Unity C# behavior executable in Godot.
+
 The sync copies the working tree except `.git`, so run it from a clean checkout
 to keep untracked or local files out of the validation project.
 

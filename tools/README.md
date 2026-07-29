@@ -20,6 +20,15 @@ Creates a throwaway Godot project, syncs this checkout into it as
 tools/validate_package.py "~/art/Some Pack.unitypackage" --run
 ```
 
+It also accepts Unity `Assets` directories. Use the preservation switches when
+the output is intended for editor-side migration work rather than a compact
+binary validation artifact:
+
+```bash
+tools/validate_package.py "/path/to/UnityProject/Assets" --run --verify \
+  --text-scenes --preserve-yaml --add-unsupported
+```
+
 See [docs/packages/](../docs/packages/README.md) for why each package needs its
 own project and what a report should record.
 

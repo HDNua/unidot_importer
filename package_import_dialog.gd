@@ -604,6 +604,14 @@ func _meta_completed(tw: Object):
 	var pkgasset = tw.asset
 	var ti = tw.extra as TreeItem
 	var importer_type: String = ""
+	# Keep source-only identities (especially .cs MonoScripts) available after
+	# unselected assets are pruned. Register the original Unity path, not the
+	# later output-root-mapped Godot path. This does not require parsing or
+	# importing the source asset itself.
+	asset_database.register_source_asset_path(
+		pkgasset.guid,
+		pkgasset.orig_pathname
+	)
 	if pkgasset.parsed_meta != null:
 		importer_type = pkgasset.parsed_meta.importer_type.replace("Importer", "")
 		if importer_type == "NativeFormat":

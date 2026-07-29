@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Scaffold (and optionally run) an isolated Godot project for validating
-.unitypackage files against this checkout of Unidot.
+.unitypackage files or Unity Assets directories against this checkout of Unidot.
 
-Given one package, this measures that package. Each one gets its own project, so
+Given one source, this measures that source. Each one gets its own project, so
 its asset database, import cache and output tree cannot be contaminated by a
 previous package. That isolation is what makes the per-package figures in
 docs/packages/ attributable.
 
     tools/validate_package.py "~/art/POLYGON - Prototype Pack.unitypackage" --run
+    tools/validate_package.py "/path/to/UnityProject/Assets" --run
 
 Given several, they are imported into one project one after another, in the
 order given. That is a different measurement and it is deliberately not the way
@@ -74,6 +75,9 @@ extends EditorPlugin
 
 const PKG := {pkg!r}
 const OUTPUT_ROOT := {output_root!r}
+const USE_TEXT_SCENES := {use_text_scenes}
+const ENABLE_UNIDOT_KEYS := {enable_unidot_keys}
+const ADD_UNSUPPORTED_COMPONENTS := {add_unsupported_components}
 const SETTLE_SECONDS := 15.0
 
 var package_import_dialog = null
@@ -100,6 +104,14 @@ func _start() -> void:
 	pid.import_output_root_override_set = true
 	pid._show_importer_common()
 	pid._selected_package(PKG)
+	# These are set after _selected_package(), which creates the per-import
+	# database and option widgets, but before the auto-import timer can fire.
+	pid._save_text_scenes_changed(USE_TEXT_SCENES)
+	pid.save_text_scenes.button_pressed = USE_TEXT_SCENES
+	pid._enable_unidot_keys_changed(ENABLE_UNIDOT_KEYS)
+	pid.enable_unidot_keys_checkbox.button_pressed = ENABLE_UNIDOT_KEYS
+	pid._add_unsupported_components_changed(ADD_UNSUPPORTED_COMPONENTS)
+	pid.add_unsupported_components_checkbox.button_pressed = ADD_UNSUPPORTED_COMPONENTS
 	poll_timer = Timer.new()
 	poll_timer.wait_time = 5.0
 	poll_timer.autostart = true
@@ -164,13 +176,26 @@ def sync_addon(project_dir: str) -> None:
 	)
 
 
-def write_bootstrap(project_dir: str, package_path: str) -> None:
+def write_bootstrap(
+	project_dir: str,
+	source_path: str,
+	*,
+	use_text_scenes: bool = False,
+	enable_unidot_keys: bool = False,
+	add_unsupported_components: bool = False,
+) -> None:
 	plugin_dir = os.path.join(project_dir, "addons", "auto_import_bootstrap")
 	os.makedirs(plugin_dir, exist_ok=True)
 	with open(os.path.join(plugin_dir, "plugin.cfg"), "w") as f:
 		f.write(PLUGIN_CFG)
 	with open(os.path.join(plugin_dir, "bootstrap.gd"), "w") as f:
-		f.write(BOOTSTRAP_GD.format(pkg=package_path, output_root=OUTPUT_ROOT))
+		f.write(BOOTSTRAP_GD.format(
+			pkg=source_path,
+			output_root=OUTPUT_ROOT,
+			use_text_scenes=str(use_text_scenes).lower(),
+			enable_unidot_keys=str(enable_unidot_keys).lower(),
+			add_unsupported_components=str(add_unsupported_components).lower(),
+		))
 
 
 def clean_import(project_dir: str) -> None:
@@ -185,9 +210,24 @@ def clean_import(project_dir: str) -> None:
 		os.remove(stale)
 
 
-def run_import(godot: str, project_dir: str, package_path: str, log_path: str) -> int:
-	"""Import one package into an already-scaffolded project."""
-	write_bootstrap(project_dir, package_path)
+def run_import(
+	godot: str,
+	project_dir: str,
+	source_path: str,
+	log_path: str,
+	*,
+	use_text_scenes: bool = False,
+	enable_unidot_keys: bool = False,
+	add_unsupported_components: bool = False,
+) -> int:
+	"""Import one package or Assets directory into a scaffolded project."""
+	write_bootstrap(
+		project_dir,
+		source_path,
+		use_text_scenes=use_text_scenes,
+		enable_unidot_keys=enable_unidot_keys,
+		add_unsupported_components=add_unsupported_components,
+	)
 	with open(log_path, "w") as log:
 		result = subprocess.run(
 			[godot, "--headless", "--editor", "."],
@@ -226,24 +266,27 @@ def run_verify(godot: str, project_dir: str, log_path: str) -> int:
 
 def main() -> int:
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-	parser.add_argument("packages", nargs="+", help="path(s) to the .unitypackage to validate; several are imported into one project in the order given")
-	parser.add_argument("--name", help="project directory name (default: derived from the package filenames)")
-	parser.add_argument("--root", help="where to create the project (default: alongside the first package)")
+	parser.add_argument("sources", nargs="+", help="path(s) to .unitypackage files or Unity Assets directories; several are imported into one project in the order given")
+	parser.add_argument("--name", help="project directory name (default: derived from the source names)")
+	parser.add_argument("--root", help="where to create the project (default: alongside the first source)")
 	parser.add_argument("--godot", default=os.environ.get("GODOT", DEFAULT_GODOT), help="Godot binary (default: $GODOT or the macOS app path)")
 	parser.add_argument("--clean", action="store_true", help="wipe a previous import before running")
 	parser.add_argument("--run", action="store_true", help="run the headless import after scaffolding")
 	parser.add_argument("--verify", action="store_true", help="run checks/verify_output.gd after every stage, to catch a later package breaking an earlier one")
+	parser.add_argument("--text-scenes", action="store_true", help="save converted scenes as editable text .tscn files")
+	parser.add_argument("--preserve-yaml", action="store_true", help="save Unity YAML fields in metadata/unidot_keys")
+	parser.add_argument("--add-unsupported", action="store_true", help="create placeholder nodes for MonoBehaviour and unsupported components")
 	args = parser.parse_args()
 
-	package_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.packages]
-	for p in package_paths:
-		if not os.path.isfile(p):
-			print("No such package: " + p, file=sys.stderr)
+	source_paths = [os.path.abspath(os.path.expanduser(p)) for p in args.sources]
+	for p in source_paths:
+		if not (os.path.isfile(p) or os.path.isdir(p)):
+			print("No such package or Assets directory: " + p, file=sys.stderr)
 			return 1
 
-	slugs = [slugify(os.path.basename(p).rsplit(".unitypackage", 1)[0]) for p in package_paths]
+	slugs = [slugify(os.path.basename(p.rstrip(os.sep)).rsplit(".unitypackage", 1)[0]) for p in source_paths]
 	name = args.name or "_then_".join(slugs)
-	root = os.path.abspath(os.path.expanduser(args.root)) if args.root else os.path.dirname(package_paths[0])
+	root = os.path.abspath(os.path.expanduser(args.root)) if args.root else os.path.dirname(source_paths[0])
 	project_dir = os.path.join(root, name + "_validate")
 
 	os.makedirs(project_dir, exist_ok=True)
@@ -251,21 +294,33 @@ def main() -> int:
 	with open(os.path.join(project_dir, "project.godot"), "w") as f:
 		f.write(PROJECT_GODOT.format(name=name, features=features))
 	sync_addon(project_dir)
-	write_bootstrap(project_dir, package_paths[0])
+	write_bootstrap(
+		project_dir,
+		source_paths[0],
+		use_text_scenes=args.text_scenes,
+		enable_unidot_keys=args.preserve_yaml,
+		add_unsupported_components=args.add_unsupported,
+	)
 
 	revision = unidot_revision()
 	with open(os.path.join(project_dir, "validation_context.json"), "w") as f:
 		json.dump({
-			"package": package_paths[0],
-			"packages": package_paths,
+			"source": source_paths[0],
+			"sources": source_paths,
+			# Retain the old fields for report-tool compatibility.
+			"package": source_paths[0],
+			"packages": source_paths,
 			"unidot_revision": revision,
 			"output_root": OUTPUT_ROOT,
+			"use_text_scenes": args.text_scenes,
+			"enable_unidot_keys": args.preserve_yaml,
+			"add_unsupported_components": args.add_unsupported,
 		}, f, indent=2)
 		f.write("\n")
 
 	print("project:  " + project_dir)
-	for i, p in enumerate(package_paths, 1):
-		print("package %d: %s" % (i, p))
+	for i, p in enumerate(source_paths, 1):
+		print("source %d:  %s" % (i, p))
 	print("unidot:   " + revision)
 	if revision.endswith("-dirty"):
 		print("warning:  the checkout has uncommitted changes; this run is not reproducible")
@@ -276,10 +331,10 @@ def main() -> int:
 
 	if not args.run:
 		print("\nTo import:")
-		for i, p in enumerate(package_paths, 1):
+		for i, p in enumerate(source_paths, 1):
 			print("  # stage %d: %s" % (i, os.path.basename(p)))
 			print('  cd "%s" && "%s" --headless --editor . > import.%d.log 2>&1' % (project_dir, args.godot, i))
-		if len(package_paths) > 1:
+		if len(source_paths) > 1:
 			print("  # each stage needs its own bootstrap; use --run rather than doing this by hand")
 		return 0
 
@@ -288,11 +343,19 @@ def main() -> int:
 		return 1
 
 	failures = 0
-	for i, p in enumerate(package_paths, 1):
+	for i, p in enumerate(source_paths, 1):
 		log_path = os.path.join(project_dir, "import.%d.log" % i)
-		print("\n=== stage %d/%d: %s" % (i, len(package_paths), os.path.basename(p)))
+		print("\n=== stage %d/%d: %s" % (i, len(source_paths), os.path.basename(p.rstrip(os.sep))))
 		print("importing, this takes a while; log -> " + log_path)
-		rc = run_import(args.godot, project_dir, p, log_path)
+		rc = run_import(
+			args.godot,
+			project_dir,
+			p,
+			log_path,
+			use_text_scenes=args.text_scenes,
+			enable_unidot_keys=args.preserve_yaml,
+			add_unsupported_components=args.add_unsupported,
+		)
 		if rc != 0:
 			return rc
 		if args.verify:
@@ -302,7 +365,7 @@ def main() -> int:
 
 	print("\nOutput tree: " + os.path.join(project_dir, "Unidot"))
 	if args.verify and failures:
-		print("verify FAILED after %d of %d stages" % (failures, len(package_paths)))
+		print("verify FAILED after %d of %d stages" % (failures, len(source_paths)))
 		return 1
 	return 0
 
